@@ -1,0 +1,74 @@
+name = "DREADWARE";
+
+Red  = 0xFF990000;
+Blue = 0xFF74BEE1;
+Mint = 0xFF3DE3A1;
+Pink = 0xFFEF80B3;
+
+Skin1 = 0xFF596C70;
+Skin2 = 0xFFB0B4A6;
+Skin3 = 0xFFF9FFFD;
+
+Black1 = 0xFF141215;
+Black2 = 0xFF242225;
+Black3 = 0xFF343235;
+Black4 = 0xFF444245;
+Black5 = 0xFF545255;
+
+
+
+Default = Skin2;
+
+Back = Black1;
+
+Base = Black2;
+Bar = Skin2;
+Bar_Active = Skin3;
+
+Margin = Black3;
+Margin_Hover = Black3;
+Margin_Active = Skin2;
+
+List_Item = Black1;
+List_Item_Hover = Skin2;
+List_Item_Active = Skin3;
+
+Pop1 = Mint;
+Pop2 = Mint;
+
+Mark = Blue;
+Cursor = Blue;
+At_Cursor = Black2;
+
+Highlight = Skin2;
+Highlight_Cursor_Line = Black2;
+Highlight_Junk = Red;
+Highlight_White = Red;
+At_Highlight = Black3;
+
+Include = Blue;
+Preproc = Blue;
+Comment = Pink;
+Keyword = Skin3;
+
+Str_Constant = Mint;
+Char_Constant = Mint;
+Int_Constant = Mint;
+Float_Constant = Mint;
+Bool_Constant = Mint;
+
+Special_Character = Red;
+Ghost_Character = Red;
+
+Paste = Skin3;
+Undo = Skin3;
+
+Back_Cycle_1 = Black1;
+Back_Cycle_2 = Black3;
+Back_Cycle_3 = Black4;
+Back_Cycle_4 = Black5;
+
+Text_Cycle_1 = Blue;
+Text_Cycle_2 = Pink;
+Text_Cycle_3 = Blue;
+Text_Cycle_4 = Pink;
