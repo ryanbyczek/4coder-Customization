@@ -37,6 +37,8 @@ START_HOOK_SIG(ryanb_start)
     global_config.enable_code_wrapping = false;
     global_config.enable_virtual_whitespace = false;
 
+    parse_extension_line_to_extension_list(make_lit_string(".h.inl.cpp"), &global_config.code_exts);
+
     return (0);
 }
 
@@ -184,6 +186,16 @@ CUSTOM_COMMAND_SIG(ryanb_kill_to_end_of_line)
     buffer_replace_range(app, &buffer, range.min, range.max, 0, 0);
     auto_tab_line_at_cursor(app);
 }
+CUSTOM_COMMAND_SIG(ryanb_move_line_down)
+{
+    move_line_down(app);
+    auto_tab_line_at_cursor(app);
+}
+CUSTOM_COMMAND_SIG(ryanb_move_line_up)
+{
+    move_line_up(app);
+    auto_tab_line_at_cursor(app);
+}
 CUSTOM_COMMAND_SIG(ryanb_page_down)
 {
     page_down(app);
@@ -252,7 +264,9 @@ extern "C" int32_t get_bindings(void* data, int32_t size)
         bind(context, key_home,      MDFR_CTRL,  goto_beginning_of_file);     // ctrl + home      : seek top of file
         bind(context, key_page_down, MDFR_NONE,  ryanb_page_down);            // page down        : page down and center view
         bind(context, key_page_up,   MDFR_NONE,  ryanb_page_up);              // page up          : page up and center view
+        bind(context, key_up,        MDFR_ALT,   ryanb_move_line_up);         // alt + up         : move line up and auto-tab
         bind(context, key_up,        MDFR_CTRL,  ryanb_seek_whitespace_up);   // ctrl + up        : seek whitespace up and center view
+        bind(context, key_down,      MDFR_ALT,   ryanb_move_line_down);       // alt + down       : move line down and auto-tab
         bind(context, key_down,      MDFR_CTRL,  ryanb_seek_whitespace_down); // ctrl + down      : seek whitespace down and center view
         bind(context, '*',           MDFR_CTRL,  ryanb_kill_buffer);          // ctrl + *         : close file or close build panel
         bind(context, ' ',           MDFR_CTRL,  center_view);                // ctrl + space     : center view
@@ -273,7 +287,8 @@ extern "C" int32_t get_bindings(void* data, int32_t size)
     {
         inherit_map(context, mapid_file);
 
-        bind(context, '{', MDFR_NONE, ryanb_close_brackets); // start bracket : auto-close brackets with new line and seek to blank line
+        bind(context, '\t', MDFR_NONE, auto_tab_line_at_cursor); // tab          : auto-tab current line
+        bind(context, '{',  MDFR_NONE, ryanb_close_brackets);    // left bracket : auto-close brackets with new line and seek to blank line
     }
     end_map(context);
 
