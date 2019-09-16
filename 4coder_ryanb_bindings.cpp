@@ -12,8 +12,7 @@ bool openAll = false;
 // CUSTOM HOOKS                                                            //
 /////////////////////////////////////////////////////////////////////////////
 
-START_HOOK_SIG(ryanb_start)
-{
+START_HOOK_SIG(ryanb_start) {
     // default
     named_maps = named_maps_values;
     named_map_count = ArrayCount(named_maps_values);
@@ -42,33 +41,10 @@ START_HOOK_SIG(ryanb_start)
     return (0);
 }
 
-OPEN_FILE_HOOK_SIG(ryanb_open_file)
-{
-    // default
+OPEN_FILE_HOOK_SIG(ryanb_open_file) {
     default_file_settings(app, buffer_id);
 
-    // custom
-    Buffer_Summary buffer = get_buffer(app, buffer_id, AccessAll);
-    if (buffer.file_name != 0 && buffer.size < (16 << 20))
-    {
-        String name = make_string(buffer.file_name, buffer.file_name_len);
-        String ext  = file_extension(name);
-        if (match(ext, "inl"))
-        {
-            if (parse_context_language_cpp == 0)
-            {
-                init_language_cpp(app);
-            }
-
-            buffer_set_setting(app, &buffer, BufferSetting_MapID, default_code_map);
-            buffer_set_setting(app, &buffer, BufferSetting_ParserContext, parse_context_language_cpp);
-            buffer_set_setting(app, &buffer, BufferSetting_WrapLine, 0);
-            buffer_set_setting(app, &buffer, BufferSetting_Lex, 1);
-        }
-    }
-
-    if (openAll)
-    {
+    if (openAll) {
         openAll = false;
         open_all_code(app);
     }
@@ -80,14 +56,12 @@ OPEN_FILE_HOOK_SIG(ryanb_open_file)
 // CUSTOM COMMANDS                                                         //
 /////////////////////////////////////////////////////////////////////////////
 
-CUSTOM_COMMAND_SIG(ryanb_build)
-{
+CUSTOM_COMMAND_SIG(ryanb_build) {
     save_all_dirty_buffers(app);
 
     View_Summary view = get_active_view(app, AccessAll);
     View_Summary buildView = get_view(app, build_footer_panel_view_id, AccessAll);
-    if (!buildView.exists)
-    {
+    if (!buildView.exists) {
         buildView = open_view(app, &view, ViewSplit_Bottom);
         new_view_settings(app, &buildView);
         view_set_split_proportion(app, &buildView, 0.4f);
@@ -101,8 +75,7 @@ CUSTOM_COMMAND_SIG(ryanb_build)
     execute_standard_build(app, &buildView, &buffer);
     set_active_view(app, &buildView);
 }
-CUSTOM_COMMAND_SIG(ryanb_close_brackets)
-{
+CUSTOM_COMMAND_SIG(ryanb_close_brackets) {
     View_Summary view = get_active_view(app, AccessOpen);
 
     int32_t position = view.cursor.pos;
@@ -113,8 +86,7 @@ CUSTOM_COMMAND_SIG(ryanb_close_brackets)
     view_set_cursor(app, &view, seek_pos(position + 2), true);
     auto_tab_line_at_cursor(app);
 }
-CUSTOM_COMMAND_SIG(ryanb_command_prompt)
-{
+CUSTOM_COMMAND_SIG(ryanb_command_prompt) {
     bool32 result;
     char commandSpace[255];
 
@@ -125,12 +97,9 @@ CUSTOM_COMMAND_SIG(ryanb_command_prompt)
     end_query_bar(app, &command, 0);
     if (!result) return;
 
-    if (match(command.string, "build"))
-    {
+    if (match(command.string, "build")) {
         ryanb_build(app);
-    }
-    else
-    {
+    } else {
         Query_Bar error;
         error.prompt = make_lit_string("Unknown Command (press any key to return)");
         error.string = null_string;
@@ -139,36 +108,28 @@ CUSTOM_COMMAND_SIG(ryanb_command_prompt)
         end_query_bar(app, &error, 0);
     }
 }
-CUSTOM_COMMAND_SIG(ryanb_duplicate_line)
-{
+CUSTOM_COMMAND_SIG(ryanb_duplicate_line) {
     duplicate_line(app);
     move_down(app);
 }
-CUSTOM_COMMAND_SIG(ryanb_goto_line)
-{
+CUSTOM_COMMAND_SIG(ryanb_goto_line) {
     goto_line(app);
     center_view(app);
 }
-CUSTOM_COMMAND_SIG(ryanb_interactive_open_all)
-{
+CUSTOM_COMMAND_SIG(ryanb_interactive_open_all) {
     openAll = true;
     close_all_code(app);
     interactive_open(app);
 }
-CUSTOM_COMMAND_SIG(ryanb_kill_buffer)
-{
+CUSTOM_COMMAND_SIG(ryanb_kill_buffer) {
     View_Summary view = get_active_view(app, AccessAll);
-    if (view.view_id == build_footer_panel_view_id)
-    {
+    if (view.view_id == build_footer_panel_view_id) {
         close_build_footer_panel(app);
-    }
-    else
-    {
+    } else {
         kill_buffer(app);
     }
 }
-CUSTOM_COMMAND_SIG(ryanb_kill_to_end_of_line)
-{
+CUSTOM_COMMAND_SIG(ryanb_kill_to_end_of_line) {
     View_Summary view = get_active_view(app, AccessOpen);
 
     int pos2 = view.cursor.pos;
@@ -177,8 +138,7 @@ CUSTOM_COMMAND_SIG(ryanb_kill_to_end_of_line)
     int pos1 = view.cursor.pos;
 
     Range range = make_range(pos1, pos2);
-    if (pos1 == pos2)
-    {
+    if (pos1 == pos2) {
         range.max += 1;
     }
 
@@ -186,33 +146,27 @@ CUSTOM_COMMAND_SIG(ryanb_kill_to_end_of_line)
     buffer_replace_range(app, &buffer, range.min, range.max, 0, 0);
     auto_tab_line_at_cursor(app);
 }
-CUSTOM_COMMAND_SIG(ryanb_move_line_down)
-{
+CUSTOM_COMMAND_SIG(ryanb_move_line_down) {
     move_line_down(app);
     auto_tab_line_at_cursor(app);
 }
-CUSTOM_COMMAND_SIG(ryanb_move_line_up)
-{
+CUSTOM_COMMAND_SIG(ryanb_move_line_up) {
     move_line_up(app);
     auto_tab_line_at_cursor(app);
 }
-CUSTOM_COMMAND_SIG(ryanb_page_down)
-{
+CUSTOM_COMMAND_SIG(ryanb_page_down) {
     page_down(app);
     center_view(app);
 }
-CUSTOM_COMMAND_SIG(ryanb_page_up)
-{
+CUSTOM_COMMAND_SIG(ryanb_page_up) {
     page_up(app);
     center_view(app);
 }
-CUSTOM_COMMAND_SIG(ryanb_seek_whitespace_up)
-{
+CUSTOM_COMMAND_SIG(ryanb_seek_whitespace_up) {
     seek_whitespace_up_end_line(app);
     center_view(app);
 }
-CUSTOM_COMMAND_SIG(ryanb_seek_whitespace_down)
-{
+CUSTOM_COMMAND_SIG(ryanb_seek_whitespace_down) {
     seek_whitespace_down_end_line(app);
     center_view(app);
 }
@@ -221,8 +175,7 @@ CUSTOM_COMMAND_SIG(ryanb_seek_whitespace_down)
 // MAIN BINDINGS FUNCTION                                                  //
 /////////////////////////////////////////////////////////////////////////////
 
-extern "C" int32_t get_bindings(void* data, int32_t size)
-{
+extern "C" int32_t get_bindings(void* data, int32_t size) {
     Bind_Helper context_ = begin_bind_helper(data, size);
     Bind_Helper *context = &context_;
 
