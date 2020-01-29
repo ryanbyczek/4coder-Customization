@@ -16,10 +16,23 @@
 // code folding (ctrol+m+o)
 // rename symbol (f2) --> match only on full word and case (using replace_in_all_buffers, query_replace_identifier)
 // spawn multiple cursors (ctrl+shift+down/up)
-// goto definiton (ctrl+click or ctrl+alt+shift+b))
 // function prototype helper
 // type helper
 // cut current scope (ctrl+shift+x)
+// double-click to select token
+// harness jump lists to add command for go-back (ctrl+-)
+
+/////////////////////////////////////////////////////////////////////////////
+// TYPES                                                                   //
+/////////////////////////////////////////////////////////////////////////////
+
+namespace {
+    struct bookmark {
+        Buffer_ID buffer;
+        View_ID   view;
+        i64       pos;
+    };
+}
 
 /////////////////////////////////////////////////////////////////////////////
 // CONSTANTS                                                               //
@@ -28,6 +41,14 @@
 namespace {
     static f32 line_number_margin   = 10.0f; // right-margin width for line number column, default was 2.0f
     static f32 scope_line_thickness = 2.0f;  // thickness of line connecting scope-start to scope-end
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// STATE                                                                   //
+/////////////////////////////////////////////////////////////////////////////
+
+namespace {
+    bookmark global_bookmark;
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -41,10 +62,10 @@ ryanb_calculate_color_brightness(u32 color) {
     u32 b = ((color >> 0 ) & 0xFF);
 
     f32 brightness = sqrtf(
-        (r * r * 0.241f)
-      + (g * g * 0.691f)
-      + (b * b * 0.068f)
-    );
+                           (r * r * 0.241f)
+                           + (g * g * 0.691f)
+                           + (b * b * 0.068f)
+                           );
 
     return (u32)(brightness);
 }
@@ -55,91 +76,100 @@ ryanb_get_token_color_cpp(Token token) {
 
     switch (token.kind) {
         case TokenBaseKind_Preprocessor:
-            result = fcolor_id(defcolor_preproc);
+        result = fcolor_id(defcolor_preproc);
         break;
 
         case TokenBaseKind_Keyword:
-            result = fcolor_id(defcolor_keyword);
+        result = fcolor_id(defcolor_keyword);
         break;
 
         case TokenBaseKind_Comment:
-            result = fcolor_id(defcolor_comment);
+        result = fcolor_id(defcolor_comment);
         break;
 
         case TokenBaseKind_LiteralString:
-            result = fcolor_id(defcolor_str_constant);
+        result = fcolor_id(defcolor_str_constant);
         break;
 
         case TokenBaseKind_LiteralInteger:
-            result = fcolor_id(defcolor_int_constant);
+        result = fcolor_id(defcolor_int_constant);
         break;
 
         case TokenBaseKind_LiteralFloat:
-            result = fcolor_id(defcolor_float_constant);
+        result = fcolor_id(defcolor_float_constant);
         break;
 
         default:
-            switch (token.sub_kind) {
-                case TokenCppKind_BraceOp:
-                case TokenCppKind_BraceCl:
-                case TokenCppKind_ParenOp:
-                case TokenCppKind_ParenCl:
-                case TokenCppKind_BrackOp:
-                case TokenCppKind_BrackCl:
-                case TokenCppKind_And:
-                case TokenCppKind_AndAnd:
-                case TokenCppKind_Or:
-                case TokenCppKind_OrOr:
-                case TokenCppKind_Colon:
-				case TokenCppKind_ColonColon:
-				case TokenCppKind_Semicolon:
-                case TokenCppKind_Comma:
-                case TokenCppKind_Dot:
-                case TokenCppKind_DotDotDot:
-                case TokenCppKind_Arrow:
-                case TokenCppKind_Plus:
-                case TokenCppKind_PlusPlus:
-                case TokenCppKind_Minus:
-                case TokenCppKind_MinusMinus:
-                case TokenCppKind_Star:
-                case TokenCppKind_Div:
-                case TokenCppKind_Mod:
-                case TokenCppKind_Ternary:
-                case TokenCppKind_Eq:
-                case TokenCppKind_PlusEq:
-                case TokenCppKind_MinusEq:
-                case TokenCppKind_StarEq:
-                case TokenCppKind_DivEq:
-                case TokenCppKind_ModEq:
-                case TokenCppKind_Less:
-                case TokenCppKind_LessEq:
-                case TokenCppKind_Grtr:
-                case TokenCppKind_GrtrEq:
-                case TokenCppKind_EqEq:
-                case TokenCppKind_NotEq:
-                    result = fcolor_id(defcolor_keyword, 2);
-                break;
+        switch (token.sub_kind) {
+            case TokenCppKind_BraceOp:
+            case TokenCppKind_BraceCl:
+            case TokenCppKind_ParenOp:
+            case TokenCppKind_ParenCl:
+            case TokenCppKind_BrackOp:
+            case TokenCppKind_BrackCl:
+            case TokenCppKind_And:
+            case TokenCppKind_AndAnd:
+            case TokenCppKind_Or:
+            case TokenCppKind_OrOr:
+            case TokenCppKind_Colon:
+            case TokenCppKind_ColonColon:
+            case TokenCppKind_Semicolon:
+            case TokenCppKind_Comma:
+            case TokenCppKind_Dot:
+            case TokenCppKind_DotDotDot:
+            case TokenCppKind_Arrow:
+            case TokenCppKind_Plus:
+            case TokenCppKind_PlusPlus:
+            case TokenCppKind_Minus:
+            case TokenCppKind_MinusMinus:
+            case TokenCppKind_Star:
+            case TokenCppKind_Div:
+            case TokenCppKind_Mod:
+            case TokenCppKind_Ternary:
+            case TokenCppKind_Eq:
+            case TokenCppKind_PlusEq:
+            case TokenCppKind_MinusEq:
+            case TokenCppKind_StarEq:
+            case TokenCppKind_DivEq:
+            case TokenCppKind_ModEq:
+            case TokenCppKind_Less:
+            case TokenCppKind_LessEq:
+            case TokenCppKind_Grtr:
+            case TokenCppKind_GrtrEq:
+            case TokenCppKind_EqEq:
+            case TokenCppKind_NotEq:
+            result = fcolor_id(defcolor_keyword, 2);
+            break;
 
-                case TokenCppKind_LiteralTrue:
-                case TokenCppKind_LiteralFalse:
-                    result = fcolor_id(defcolor_bool_constant);
-                break;
+            case TokenCppKind_LiteralTrue:
+            case TokenCppKind_LiteralFalse:
+            result = fcolor_id(defcolor_bool_constant);
+            break;
 
-                case TokenCppKind_LiteralCharacter:
-                case TokenCppKind_LiteralCharacterWide:
-                case TokenCppKind_LiteralCharacterUTF8:
-                case TokenCppKind_LiteralCharacterUTF16:
-                case TokenCppKind_LiteralCharacterUTF32:
-                    result = fcolor_id(defcolor_char_constant);
-                break;
+            case TokenCppKind_LiteralCharacter:
+            case TokenCppKind_LiteralCharacterWide:
+            case TokenCppKind_LiteralCharacterUTF8:
+            case TokenCppKind_LiteralCharacterUTF16:
+            case TokenCppKind_LiteralCharacterUTF32:
+            result = fcolor_id(defcolor_char_constant);
+            break;
 
-                case TokenCppKind_PPIncludeFile:
-                    result = fcolor_id(defcolor_include);
-                break;
-            }
+            case TokenCppKind_PPIncludeFile:
+            result = fcolor_id(defcolor_include);
+            break;
+        }
     }
 
     return (result);
+}
+
+function void
+ryanb_bookmark_location(Application_Links* app) {
+    View_ID view = get_active_view(app, Access_ReadVisible);
+
+    global_bookmark.view = view;
+    global_bookmark.buffer = view_get_buffer(app, view, Access_ReadVisible);
+    global_bookmark.pos = view_get_cursor_pos(app, view);
 }
 
 Rect_f32_Pair
@@ -163,6 +193,8 @@ ryanb_string_find_first_non_whitespace(String_Const_u8 str) {
 
 function void
 ryanb_paint_tokens(Application_Links* app, Buffer_ID buffer, Text_Layout_ID text_layout_id) {
+    ProfileScope(app, "ryanb paint tokens");
+
     Scratch_Block scratch(app);
 
     Range_i64 functionNameRange = {};
@@ -181,45 +213,45 @@ ryanb_paint_tokens(Application_Links* app, Buffer_ID buffer, Text_Layout_ID text
 
             switch (token->kind) {
                 case TokenBaseKind_ParentheticalOpen:
-                    // end function token range
-                    if (functionNameRange.max == 0) {
-                        functionNameRange.max = token->pos;
-                    }
+                // end function token range
+                if (functionNameRange.max == 0) {
+                    functionNameRange.max = token->pos;
+                }
                 break;
 
                 case TokenBaseKind_Identifier:
-                    // start function token range
-                    if (functionNameRange.min == 0 && functionNameRange.max == 0) {
-                        functionNameRange.min = token->pos;
-                    }
+                // start function token range
+                if (functionNameRange.min == 0 && functionNameRange.max == 0) {
+                    functionNameRange.min = token->pos;
+                }
 
-                    // detect and paint struct tokens
-                    if (token->sub_kind == TokenCppKind_Identifier) {
-                        String_Const_u8 tokenString = push_token_lexeme(app, scratch, buffer, token);
-                        for (Buffer_ID nextBuffer = get_buffer_next(app, 0, Access_Always); nextBuffer != 0; nextBuffer = get_buffer_next(app, nextBuffer, Access_Always)) {
-                            Code_Index_File* file = code_index_get_file(nextBuffer);
-                            if (file != 0) {
-                                for (i32 i = 0; i < file->note_array.count; ++i) {
-                                    Code_Index_Note* note = file->note_array.ptrs[i];
-                                    switch (note->note_kind) {
-                                        case CodeIndexNote_Type:
-                                            if (string_match(note->text, tokenString, StringMatch_Exact)) {
-                                                Range_i64 tokenRange;
-                                                tokenRange.start = token->pos;
-                                                tokenRange.end = token->pos + token->size;
-                                                paint_text_color(app, text_layout_id, tokenRange, finalize_color(defcolor_keyword, 0));
-                                                break;
-                                            }
+                // detect and paint struct tokens
+                if (token->sub_kind == TokenCppKind_Identifier) {
+                    String_Const_u8 tokenString = push_token_lexeme(app, scratch, buffer, token);
+                    for (Buffer_ID nextBuffer = get_buffer_next(app, 0, Access_Always); nextBuffer != 0; nextBuffer = get_buffer_next(app, nextBuffer, Access_Always)) {
+                        Code_Index_File* file = code_index_get_file(nextBuffer);
+                        if (file != 0) {
+                            for (i32 i = 0; i < file->note_array.count; ++i) {
+                                Code_Index_Note* note = file->note_array.ptrs[i];
+                                switch (note->note_kind) {
+                                    case CodeIndexNote_Type:
+                                    if (string_match(note->text, tokenString, StringMatch_Exact)) {
+                                        Range_i64 tokenRange;
+                                        tokenRange.start = token->pos;
+                                        tokenRange.end = token->pos + token->size;
+                                        paint_text_color(app, text_layout_id, tokenRange, finalize_color(defcolor_keyword, 0));
                                         break;
                                     }
+                                    break;
                                 }
                             }
                         }
                     }
+                }
                 break;
 
                 default:
-                    functionNameRange = {};
+                functionNameRange = {};
             }
 
             // paint function tokens
@@ -304,15 +336,15 @@ ryanb_draw_file_bar(Application_Links *app, View_ID view_id, Buffer_ID buffer, F
     Line_Ending_Kind* eol_setting = scope_attachment(app, scope, buffer_eol_setting, Line_Ending_Kind);
     switch (*eol_setting) {
         case LineEndingKind_Binary:
-            push_fancy_string(scratch, &list, color, string_u8_litexpr(" | BIN"));
+        push_fancy_string(scratch, &list, color, string_u8_litexpr(" | BIN"));
         break;
 
         case LineEndingKind_LF:
-            push_fancy_string(scratch, &list, color, string_u8_litexpr(" | LF"));
+        push_fancy_string(scratch, &list, color, string_u8_litexpr(" | LF"));
         break;
 
         case LineEndingKind_CRLF:
-            push_fancy_string(scratch, &list, color, string_u8_litexpr(" | CRLF"));
+        push_fancy_string(scratch, &list, color, string_u8_litexpr(" | CRLF"));
         break;
     }
 
@@ -337,6 +369,8 @@ ryanb_draw_file_bar(Application_Links *app, View_ID view_id, Buffer_ID buffer, F
 }
 function void
 ryanb_draw_hex_color_preview(Application_Links* app, Buffer_ID buffer, Text_Layout_ID text_layout_id, i64 pos) {
+    ProfileScope(app, "ryanb hex color preview");
+
     Scratch_Block scratch(app);
 
     Range_i64 range = enclose_pos_alpha_numeric(app, buffer, pos);
@@ -363,6 +397,8 @@ ryanb_draw_hex_color_preview(Application_Links* app, Buffer_ID buffer, Text_Layo
 }
 function void
 ryanb_draw_scope_annotations(Application_Links *app, Buffer_ID buffer, Text_Layout_ID text_layout_id, i64 pos, Rect_f32 rect) {
+    ProfileScope(app, "ryanb scope annotations");
+
     Scratch_Block scratch(app);
 
     Face_ID faceID = get_face_id(app, buffer);
@@ -581,31 +617,31 @@ CUSTOM_COMMAND_SIG(ryanb_write_text) {
     if (insert.str != 0 && insert.size > 0) {
         switch (insert.str[0]) {
             case '{':
-                write_string(app, string_u8_litexpr("{}"));
+            write_string(app, string_u8_litexpr("{}"));
             break;
 
             case '(':
-                write_string(app, string_u8_litexpr("()"));
+            write_string(app, string_u8_litexpr("()"));
             break;
 
             case '[':
-                write_string(app, string_u8_litexpr("[]"));
+            write_string(app, string_u8_litexpr("[]"));
             break;
 
             case '}':
             case ')':
             case ']':
-                isClosingBrace = true;
+            isClosingBrace = true;
             break;
 
             case '\'':
             case '\"':
-                isQuote = true;
+            isQuote = true;
             break;
 
             default:
-                write_text_input(app);
-                return;
+            write_text_input(app);
+            return;
             break;
         }
     }
@@ -629,6 +665,48 @@ CUSTOM_COMMAND_SIG(ryanb_write_text) {
 CUSTOM_COMMAND_SIG(ryanb_duplicate_line) {
     duplicate_line(app);
     move_down(app);
+}
+CUSTOM_COMMAND_SIG(ryanb_goto_bookmark) {
+    View_ID view = global_bookmark.view;
+    Buffer_ID buffer = global_bookmark.buffer;
+    i64 pos = global_bookmark.pos;
+
+    ryanb_bookmark_location(app);
+
+    switch_to_existing_view(app, view, buffer);
+    set_view_to_location(app, view, buffer, seek_pos(pos));
+    view_set_active(app, view);
+    center_view(app);
+}
+CUSTOM_COMMAND_SIG(ryanb_goto_function) {
+    Scratch_Block scratch(app);
+
+    View_ID view = get_active_view(app, Access_ReadVisible);
+    Buffer_ID buffer_id = view_get_buffer(app, view, Access_ReadVisible);
+
+    i64 pos = view_get_cursor_pos(app, view);
+    Range_i64 range = enclose_pos_alpha_numeric_underscore(app, buffer_id, pos);
+    String_Const_u8 query = push_buffer_range(app, scratch, buffer_id, range);
+
+    code_index_lock();
+
+    for (Buffer_ID buffer = get_buffer_next(app, 0, Access_Always); buffer != 0; buffer = get_buffer_next(app, buffer, Access_Always)) {
+        Code_Index_File* file = code_index_get_file(buffer);
+        if (file == 0) continue;
+
+        for (i32 i = 0; i < file->note_array.count; ++i) {
+            Code_Index_Note* note = file->note_array.ptrs[i];
+            if (string_match(note->text, query)) {
+                ryanb_bookmark_location(app);
+                switch_to_existing_view(app, view, buffer);
+                set_view_to_location(app, view, buffer, seek_pos(note->pos.first));
+                center_view(app);
+                break;
+            }
+        }
+    }
+
+    code_index_unlock();
 }
 CUSTOM_COMMAND_SIG(ryanb_goto_line) {
     goto_line(app);
@@ -678,6 +756,7 @@ CUSTOM_COMMAND_SIG(ryanb_page_up) {
 CUSTOM_COMMAND_SIG(ryanb_rename_identifier) {
     View_ID view = get_active_view(app, Access_ReadWriteVisible);
     Buffer_ID buffer = view_get_buffer(app, view, Access_ReadWriteVisible);
+
     if (buffer != 0) {
         Scratch_Block scratch(app);
         i64 pos = view_get_cursor_pos(app, view);
@@ -816,8 +895,9 @@ void ryanb_setup_default_mapping(Mapping* mapping, i64 global_id, i64 file_id, i
     Bind(toggle_fullscreen,               KeyCode_F11);                                     // f11              : toggle full screen
     Bind(close_build_footer_panel,        KeyCode_Escape);                                  // esc              : close open build panel
     Bind(change_active_panel,             KeyCode_Comma, KeyCode_Control);                  // ctrl + ,         : switch active panel
-    //Bind(open_panel_vsplit,               KeyCode_Plus,  KeyCode_Control);                  // ctrl + +         : open split panel
-    //Bind(close_panel,                     KeyCode_Minus,  KeyCode_Control);                 // ctrl + -         : close split panel
+    Bind(swap_panels,                     KeyCode_Comma, KeyCode_Control, KeyCode_Shift);   // ctrl + shift + , : swap panels
+    //Bind(open_panel_vsplit,               KeyCode_NumPlus,  KeyCode_Control);               // ctrl + +         : open split panel
+    //Bind(close_panel,                     KeyCode_NumMinus, KeyCode_Control);               // ctrl + -         : close split panel
     Bind(build_in_build_panel,            KeyCode_B,     KeyCode_Control);                  // ctrl + b         : execute build in build panel
     Bind(interactive_new,                 KeyCode_N,     KeyCode_Control);                  // ctrl + n         : open new file prompt
     Bind(interactive_open,                KeyCode_O,     KeyCode_Control);                  // ctrl + o         : open existing file prompt
@@ -857,7 +937,8 @@ void ryanb_setup_default_mapping(Mapping* mapping, i64 global_id, i64 file_id, i
     Bind(ryanb_move_left_token_boundary,  KeyCode_Left,   KeyCode_Control);                // ctrl + left      : seek token left
     Bind(move_right,                      KeyCode_Right);                                  // right            : seek character right
     Bind(ryanb_move_right_token_boundary, KeyCode_Right,  KeyCode_Control);                // ctrl + right     : seek token right
-    //Bind(ryanb_kill_buffer,               KeyCode_Star,   KeyCode_Control);                // ctrl + *         : close file or close build panel
+    //Bind(ryanb_kill_buffer,               KeyCode_NumStar,   KeyCode_Control);             // ctrl + *         : close file or close build panel
+    Bind(ryanb_goto_bookmark,             KeyCode_Minus,  KeyCode_Control);                // ctrl + -         : bookmark current position and go to last bookmarked location
     Bind(center_view,                     KeyCode_Space,  KeyCode_Control);                // ctrl + space     : center view
     Bind(select_all,                      KeyCode_A,      KeyCode_Control);                // ctrl + a         : select all
     Bind(copy,                            KeyCode_C,      KeyCode_Control);                // ctrl + c         : copy selection
@@ -884,12 +965,15 @@ void ryanb_setup_default_mapping(Mapping* mapping, i64 global_id, i64 file_id, i
 
     BindTextInput(ryanb_write_text);
 
-    Bind(ryanb_rename_identifier,         KeyCode_F2);                            // F2           : rename identifier in all open buffers
-    Bind(ryanb_move_left_token_boundary,  KeyCode_Left,         KeyCode_Control); // ctrl + left  : seek token left
-    Bind(ryanb_move_right_token_boundary, KeyCode_Right,        KeyCode_Control); // ctrl + right : seek token right
-    Bind(word_complete,                   KeyCode_Tab);                           // tab          : auto-complete current word
-    Bind(comment_line_toggle,             KeyCode_ForwardSlash, KeyCode_Control); // ctrl + /     : toggle line comment
-    Bind(paste_and_indent,                KeyCode_V,            KeyCode_Control); // ctrl + v     : paste and indent
+    Bind(ryanb_rename_identifier,         KeyCode_F2);                                                        // F2                     : rename identifier in all open buffers
+    Bind(ryanb_move_left_token_boundary,  KeyCode_Left,         KeyCode_Control);                             // ctrl + left            : seek token left
+    Bind(ryanb_move_right_token_boundary, KeyCode_Right,        KeyCode_Control);                             // ctrl + right           : seek token right
+    Bind(word_complete,                   KeyCode_Tab);                                                       // tab                    : auto-complete current word
+    Bind(comment_line_toggle,             KeyCode_ForwardSlash, KeyCode_Control);                             // ctrl + /               : toggle line comment
+    Bind(ryanb_goto_function,             KeyCode_B,            KeyCode_Control, KeyCode_Shift, KeyCode_Alt); // ctrl + shift + alt + b : go to function declaration for function under cursor
+    Bind(write_note,                      KeyCode_N,            KeyCode_Alt);                                 // alt + n                : write a NOTE comment
+    Bind(write_todo,                      KeyCode_T,            KeyCode_Alt);                                 // alt + t                : write a TODO comment
+    Bind(paste_and_indent,                KeyCode_V,            KeyCode_Control);                             // ctrl + v               : paste and indent
 }
 
 /////////////////////////////////////////////////////////////////////////////
