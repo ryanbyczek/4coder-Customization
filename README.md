@@ -4,6 +4,7 @@ My 4coder customization layer for 4coder 4.1.2+ (Beta)
 These files are to be placed under the 4coder\custom directory.
 
 Features:
+* Jump to function under cursor, with the ability to jump back afterwards
 * More informative File Bar
 * Preview hex color codes that lie under the cursor
 * Draw guide-lines from scope start to scope end
