@@ -4,7 +4,7 @@
 #pragma warning(push)
 #pragma warning(disable:4189) // local variable is initialized but not referenced
 
-// scope lines/annotation code and bat from: https://github.com/ryanfleury/4coder_fleury
+// scope lines/brace highlight/scope annotation code and bat from: https://github.com/ryanfleury/4coder_fleury
 // struct/function highlight code from: https://github.com/Skytrias/4files
 // hex color preview code from: https://gist.github.com/thevaber/58bb6a1c03ebe56309545f413e898a95
 
@@ -39,7 +39,7 @@ namespace {
 /////////////////////////////////////////////////////////////////////////////
 
 namespace {
-    static f32 cursor_thickness     = 2.0f;  // thickness of cursor when in notepad style mode, default was 1.0f
+    static f32 cursor_thickness     = 3.0f;  // thickness of cursor when in notepad style mode, default was 1.0f
     static f32 cursor_fade_time     = 0.7f;  // time in seconds it takes to fade the cursor out
     static f32 line_number_margin   = 10.0f; // right-margin width for line number column, default was 2.0f
     static f32 scope_line_thickness = 2.0f;  // thickness of line connecting scope-start to scope-end
@@ -60,7 +60,7 @@ namespace {
 function void
 ryanb_bookmark_location(Application_Links* app) {
     View_ID view = get_active_view(app, Access_ReadVisible);
-    
+
     global_bookmark.view = view;
     global_bookmark.buffer = view_get_buffer(app, view, Access_ReadVisible);
     global_bookmark.pos = view_get_cursor_pos(app, view);
@@ -71,47 +71,47 @@ ryanb_calculate_color_brightness(u32 color) {
     u32 r = ((color >> 16) & 0xFF);
     u32 g = ((color >> 8 ) & 0xFF);
     u32 b = ((color >> 0 ) & 0xFF);
-    
+
     f32 brightness = sqrtf((r * r * 0.241f) + (g * g * 0.691f) + (b * b * 0.068f));
-    
+
     return (u32)(brightness);
 }
 
 function FColor
 ryanb_get_token_color_cpp(Token token) {
     FColor result = fcolor_id(defcolor_text_default);
-    
+
     switch (token.kind) {
         case TokenBaseKind_Preprocessor: {
             result = fcolor_id(defcolor_preproc);
         }
         break;
-        
+
         case TokenBaseKind_Keyword: {
             result = fcolor_id(defcolor_keyword);
         }
         break;
-        
+
         case TokenBaseKind_Comment: {
             result = fcolor_id(defcolor_comment);
         }
         break;
-        
+
         case TokenBaseKind_LiteralString: {
             result = fcolor_id(defcolor_str_constant);
         }
         break;
-        
+
         case TokenBaseKind_LiteralInteger: {
             result = fcolor_id(defcolor_int_constant);
         }
         break;
-        
+
         case TokenBaseKind_LiteralFloat: {
             result = fcolor_id(defcolor_float_constant);
         }
         break;
-        
+
         default: {
             switch (token.sub_kind) {
                 case TokenCppKind_BraceOp:
@@ -154,13 +154,13 @@ ryanb_get_token_color_cpp(Token token) {
                     result = fcolor_id(defcolor_keyword, 2);
                 }
                 break;
-                
+
                 case TokenCppKind_LiteralTrue:
                 case TokenCppKind_LiteralFalse: {
                     result = fcolor_id(defcolor_bool_constant);
                 }
                 break;
-                
+
                 case TokenCppKind_LiteralCharacter:
                 case TokenCppKind_LiteralCharacterWide:
                 case TokenCppKind_LiteralCharacterUTF8:
@@ -169,7 +169,7 @@ ryanb_get_token_color_cpp(Token token) {
                     result = fcolor_id(defcolor_char_constant);
                 }
                 break;
-                
+
                 case TokenCppKind_PPIncludeFile: {
                     result = fcolor_id(defcolor_include);
                 }
@@ -177,7 +177,7 @@ ryanb_get_token_color_cpp(Token token) {
             }
         }
     }
-    
+
     return (result);
 }
 
@@ -201,13 +201,48 @@ ryanb_string_find_first_non_whitespace(String_Const_u8 str) {
 /////////////////////////////////////////////////////////////////////////////
 
 function void
+ryanb_paint_brace_highlight(Application_Links* app, Buffer_ID buffer, Text_Layout_ID text_layout_id, i64 pos){
+    ProfileScope(app, "ryanb paint brace highlight");
+
+    b32 is_scope_near = false;
+    Token_Array token_array = get_token_array_from_buffer(app, buffer);
+    if (token_array.tokens != 0) {
+        Token_Iterator_Array it = token_iterator_pos(0, &token_array, pos);
+        Token* token = token_it_read(&it);
+        if(token != 0 && token->kind == TokenBaseKind_ScopeOpen) {
+            pos = token->pos + token->size;
+        }
+        else {
+            if(token_it_dec_all(&it)) {
+                token = token_it_read(&it);
+                if (token->kind == TokenBaseKind_ScopeClose && pos == token->pos + token->size) {
+                    pos = token->pos;
+                }
+            }
+        }
+    }
+
+    Range_i64 range;
+    if (find_surrounding_nest(app, buffer, pos, FindNest_Scope, &range)) {
+
+        ARGB_Color color = fcolor_resolve(fcolor_id(defcolor_highlight));
+        draw_character_block(app, text_layout_id, range.min, 0.0f, color);
+        draw_character_block(app, text_layout_id, (range.max - 1), 0.0f, color);
+
+        color = fcolor_resolve(fcolor_id(defcolor_back));
+        paint_text_color_pos(app, text_layout_id, range.min, color);
+        paint_text_color_pos(app, text_layout_id, (range.max - 1), color);
+    }
+}
+
+function void
 ryanb_paint_tokens(Application_Links* app, Buffer_ID buffer, Text_Layout_ID text_layout_id) {
     ProfileScope(app, "ryanb paint tokens");
-    
+
     Scratch_Block scratch(app);
-    
+
     Range_i64 functionNameRange = { };
-    
+
 	Token_Array array = get_token_array_from_buffer(app, buffer);
     if (array.tokens != 0) {
         Range_i64 visibleRange = text_layout_get_visible_range(app, text_layout_id);
@@ -215,11 +250,11 @@ ryanb_paint_tokens(Application_Links* app, Buffer_ID buffer, Text_Layout_ID text
         Token_Iterator_Array it = token_iterator_index(0, &array, first);
         for (;;) {
             Token* token = token_it_read(&it);
-            
+
             if (token->pos >= visibleRange.one_past_last) {
                 break;
             }
-            
+
             switch (token->kind) {
                 case TokenBaseKind_ParentheticalOpen: {
                     // end function token range
@@ -228,20 +263,20 @@ ryanb_paint_tokens(Application_Links* app, Buffer_ID buffer, Text_Layout_ID text
                     }
                 }
                 break;
-                
+
                 case TokenBaseKind_Identifier: {
                     // start function token range
                     if (functionNameRange.min == 0 && functionNameRange.max == 0) {
                         functionNameRange.min = token->pos;
                     }
-                    
+
                     // detect and paint struct tokens
                     if (token->sub_kind == TokenCppKind_Identifier) {
                         String_Const_u8 tokenString = push_token_lexeme(app, scratch, buffer, token);
                         for (Buffer_ID nextBuffer = get_buffer_next(app, 0, Access_Always); nextBuffer != 0; nextBuffer = get_buffer_next(app, nextBuffer, Access_Always)) {
                             Code_Index_File* file = code_index_get_file(nextBuffer);
                             if (file == 0) continue;
-                            
+
                             for (i32 i = 0; i < file->note_array.count; ++i) {
                                 Code_Index_Note* note = file->note_array.ptrs[i];
                                 switch (note->note_kind) {
@@ -259,18 +294,18 @@ ryanb_paint_tokens(Application_Links* app, Buffer_ID buffer, Text_Layout_ID text
                     }
                 }
                 break;
-                
+
                 default: {
                     functionNameRange = { };
                 }
             }
-            
+
             // paint function tokens
             if (functionNameRange.min != 0 && functionNameRange.max != 0) {
                 paint_text_color(app, text_layout_id, functionNameRange, finalize_color(defcolor_keyword, 1));
                 functionNameRange = { };
             }
-            
+
             if (!token_it_inc_all(&it)) {
                 break;
             }
@@ -280,6 +315,8 @@ ryanb_paint_tokens(Application_Links* app, Buffer_ID buffer, Text_Layout_ID text
 
 function void
 ryanb_draw_cpp_token_colors(Application_Links *app, Text_Layout_ID text_layout_id, Token_Array *array) {
+    ProfileScope(app, "ryanb draw cpp token colors");
+
     Range_i64 visible_range = text_layout_get_visible_range(app, text_layout_id);
     i64 first_index = token_index_from_pos(array, visible_range.first);
     Token_Iterator_Array it = token_iterator_index(0, array, first_index);
@@ -300,18 +337,20 @@ ryanb_draw_cpp_token_colors(Application_Links *app, Text_Layout_ID text_layout_i
 
 function void
 ryanb_draw_file_bar(Application_Links *app, View_ID view_id, Buffer_ID buffer, Face_ID face_id, Rect_f32 bar) {
+    ProfileScope(app, "ryanb draw file bar");
+
     Scratch_Block scratch(app);
-    
+
     draw_rectangle_fcolor(app, bar, 0.0f, fcolor_id(defcolor_bar));
-    
+
     FColor color = fcolor_id(defcolor_base);
-    
+
     Fancy_Line list = { };
     String_Const_u8 unique_name = push_buffer_unique_name(app, scratch, buffer);
-    
+
     // show file name
     push_fancy_string(scratch, &list, color, unique_name);
-    
+
     // show dirty flags
     Dirty_State dirty = buffer_get_dirty_state(app, buffer);
     u8 space[3];
@@ -325,14 +364,14 @@ ryanb_draw_file_bar(Application_Links *app, View_ID view_id, Buffer_ID buffer, F
     if (HasFlag(dirty, DirtyState_UnloadedChanges)) {
         string_append(&str, string_u8_litexpr("!"));
     }
-    
+
     push_fancy_string(scratch, &list, fcolor_id(defcolor_highlight_junk), str.string);
-    
+
     // show cursor position
     i64 cursor_position = view_get_cursor_pos(app, view_id);
     Buffer_Cursor cursor = view_compute_cursor(app, view_id, seek_pos(cursor_position));
     push_fancy_stringf(scratch, &list, color, " | Line %3.lld, Col %3.lld", cursor.line, cursor.col);
-    
+
     // show spaces/tabs
     if (global_config.indent_with_tabs) {
         push_fancy_string(scratch, &list, color, string_u8_litexpr(" | Spaces: Tab"));
@@ -340,11 +379,11 @@ ryanb_draw_file_bar(Application_Links *app, View_ID view_id, Buffer_ID buffer, F
     else {
         push_fancy_stringf(scratch, &list, color, " | Spaces: %1.lld", global_config.indent_width);
     }
-    
+
     // show encoding
     // TODO: get the actual encoding, looks like it always saves as UTF-8 for now...
     push_fancy_string(scratch, &list, color, string_u8_litexpr(" | UTF-8"));
-    
+
     // show line endings
     Managed_Scope scope = buffer_get_managed_scope(app, buffer);
     Line_Ending_Kind* eol_setting = scope_attachment(app, scope, buffer_eol_setting, Line_Ending_Kind);
@@ -353,18 +392,18 @@ ryanb_draw_file_bar(Application_Links *app, View_ID view_id, Buffer_ID buffer, F
             push_fancy_string(scratch, &list, color, string_u8_litexpr(" | BIN"));
         }
         break;
-        
+
         case LineEndingKind_LF: {
             push_fancy_string(scratch, &list, color, string_u8_litexpr(" | LF"));
         }
         break;
-        
+
         case LineEndingKind_CRLF: {
             push_fancy_string(scratch, &list, color, string_u8_litexpr(" | CRLF"));
         }
         break;
     }
-    
+
     // show language type
     String_Const_u8 ext = string_file_extension(unique_name);
     if (string_match(ext, string_u8_litexpr("c"))   ||
@@ -374,23 +413,20 @@ ryanb_draw_file_bar(Application_Links *app, View_ID view_id, Buffer_ID buffer, F
         string_match(ext, string_u8_litexpr("inl"))) {
         push_fancy_string(scratch, &list, color, string_u8_litexpr(" | C++"));
     }
-    else if (string_match(ext, string_u8_litexpr("jai"))) {
-        push_fancy_string(scratch, &list, color, string_u8_litexpr(" | JAI"));
-    }
     else {
         push_fancy_string(scratch, &list, color, string_u8_litexpr(" | Plain Text"));
     }
-    
+
     Vec2_f32 p = bar.p0 + V2f32(2.0f, 2.0f);
     draw_fancy_line(app, face_id, fcolor_zero(), &list, p);
 }
 
 function void
 ryanb_draw_hex_color_preview(Application_Links* app, Buffer_ID buffer, Text_Layout_ID text_layout_id, i64 pos) {
-    ProfileScope(app, "ryanb hex color preview");
-    
+    ProfileScope(app, "ryanb draw hex color preview");
+
     Scratch_Block scratch(app);
-    
+
     Range_i64 range = enclose_pos_alpha_numeric(app, buffer, pos);
     String_Const_u8 identifier = push_buffer_range(app, scratch, buffer, range);
     if (identifier.size == 10) {
@@ -400,13 +436,13 @@ ryanb_draw_hex_color_preview(Application_Links* app, Buffer_ID buffer, Text_Layo
                 char c = identifier.str[i + 2];
                 isHex = ((c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f') || (c >= '0' && c <= '9'));
             }
-            
+
             if (isHex) {
                 String_Const_u8 hex = string_substring(identifier, Ii64_size(2, 8));
-                
+
                 ARGB_Color hexColor = (u32)string_to_integer(hex, 16);
                 draw_character_block(app, text_layout_id, Ii64_size(range.min, 10), 2.0f, hexColor);
-                
+
                 ARGB_Color textColor = ryanb_calculate_color_brightness(hexColor) < 128 ? 0xFFFFFFFF : 0xFF000000;
                 paint_text_color(app, text_layout_id, range, textColor);
             }
@@ -416,34 +452,37 @@ ryanb_draw_hex_color_preview(Application_Links* app, Buffer_ID buffer, Text_Layo
 
 function void
 ryanb_draw_notepad_style_cursor_highlight(Application_Links *app, Frame_Info frame_info, View_ID view_id, b32 is_active_view, Buffer_ID buffer, Text_Layout_ID text_layout_id, f32 roundness) {
+    ProfileScope(app, "ryanb draw notepad style cursor highlight");
+
     static f32 accumulator = 0.0f;
     static i64 last_cursor_pos = view_get_cursor_pos(app, view_id);
-    
+
     if (!draw_highlight_range(app, view_id, buffer, text_layout_id, roundness)) {
         i64 cursor_pos = view_get_cursor_pos(app, view_id);
         i64 mark_pos = view_get_mark_pos(app, view_id);
-        
+
         if (view_id == get_active_view(app, Access_Always)) {
             if (cursor_pos != mark_pos) {
                 Range_i64 range = Ii64(cursor_pos, mark_pos);
                 draw_character_block(app, text_layout_id, range, roundness, fcolor_id(defcolor_highlight));
                 paint_text_color_fcolor(app, text_layout_id, range, fcolor_id(defcolor_at_highlight));
             }
-            
+
             if (accumulator <= 0.0f) {
                 last_cursor_pos = cursor_pos;
             }
-            
+
             animate_in_n_milliseconds(app, 0);
             accumulator += frame_info.literal_dt;
-            
+
             if (accumulator >= cursor_fade_time || last_cursor_pos != cursor_pos) {
                 accumulator = 0.0f;
             }
-            
+
             Rect_f32 rect = text_layout_character_on_screen(app, text_layout_id, cursor_pos);
+            rect.x0 -= 1;
             rect.x1 = rect.x0 + cursor_thickness;
-            
+
             u32 alpha = (u32)(((1.0f - (accumulator / cursor_fade_time)) * 255.0f) + 0.5f);
             u32 color = (fcolor_resolve(fcolor_id(defcolor_cursor)) & 0x00FFFFFF) | (alpha << 24);
             draw_rectangle(app, rect, 0.0f, color);
@@ -453,18 +492,18 @@ ryanb_draw_notepad_style_cursor_highlight(Application_Links *app, Frame_Info fra
 
 function void
 ryanb_draw_scope_annotations(Application_Links *app, Buffer_ID buffer, Text_Layout_ID text_layout_id, i64 pos, Rect_f32 rect) {
-    ProfileScope(app, "ryanb scope annotations");
-    
+    ProfileScope(app, "ryanb draw scope annotations");
+
     Scratch_Block scratch(app);
-    
+
     Face_ID faceID = get_face_id(app, buffer);
     Face_Metrics metrics = get_face_metrics(app, faceID);
-    
+
     Token_Array tokenArray = get_token_array_from_buffer(app, buffer);
     if (tokenArray.tokens != 0) {
         Token_Iterator_Array it = token_iterator_pos(0, &tokenArray, pos);
         Token* token = token_it_read(&it);
-        
+
         if (token != 0 && token->kind == TokenBaseKind_ScopeOpen) {
             pos = token->pos + token->size;
         }
@@ -476,14 +515,13 @@ ryanb_draw_scope_annotations(Application_Links *app, Buffer_ID buffer, Text_Layo
             }
         }
     }
-    
+
     f32 xScopeOffset = rect.x0;
-    
+
     Range_i64_Array ranges = get_enclosure_ranges(app, scratch, buffer, pos, RangeHighlightKind_CharacterHighlight);
-    for (i32 i = ranges.count - 1; i >= 0; --i)
-    {
+    for (i32 i = ranges.count - 1; i >= 0; --i) {
         Range_i64 range = ranges.ranges[i];
-        
+
         int nest = 0;
         Token* startToken = 0;
         Token_Iterator_Array it = token_iterator_pos(0, &tokenArray, range.start - 1);
@@ -502,44 +540,45 @@ ryanb_draw_scope_annotations(Application_Links *app, Buffer_ID buffer, Text_Layo
                 break;
             }
         }
-        
+
+        //
         if (startToken) {
             ARGB_Color color = finalize_color(defcolor_comment, 1);
-            
+
             Rect_f32 rectStart = text_layout_character_on_screen(app, text_layout_id, range.start);
             Rect_f32 rectEnd   = text_layout_character_on_screen(app, text_layout_id, range.end);
-            
+
             // draw annotation
             String_Const_u8 annotation = push_buffer_line(app, scratch, buffer, get_line_number_from_pos(app, buffer, startToken->pos));
-            
+
             u64 annotationStart = ryanb_string_find_first_non_whitespace(annotation);
             annotation.str  += annotationStart;
             annotation.size -= annotationStart;
-            
+
             if (annotation.str[annotation.size - 1] == 13) {
                 --annotation.size;
             }
             if (annotation.str[annotation.size - 1] == 123) {
                 --annotation.size;
             }
-            
+
             Vec2_f32 annotationPosition = { rectEnd.x0, rectEnd.y0 };
-            
+
             annotationPosition.x += metrics.space_advance;
             draw_string(app, faceID, string_u8_litexpr("<<"), annotationPosition, color);
             annotationPosition.x += (metrics.space_advance * 3);
             draw_string(app, faceID, annotation, annotationPosition, color);
-            
+
             // draw scope lines
             Range_i64 visibleRange = text_layout_get_visible_range(app, text_layout_id);
-            
+
             Rect_f32 scopeLine;
-            scopeLine.x0 = xScopeOffset + (scope_line_thickness * 0.5f) + 1.0f;
-            scopeLine.x1 = xScopeOffset + (scope_line_thickness * 1.5f);
+            scopeLine.x0 = xScopeOffset;
+            scopeLine.x1 = scopeLine.x0 + scope_line_thickness;
             scopeLine.y0 = (range.start < visibleRange.start) ? 0.0f : rectStart.y0 + metrics.line_height;
             scopeLine.y1 = (range.end > visibleRange.end) ? 10000.0f : rectEnd.y0;
-            draw_rectangle(app, scopeLine, 0.5f, color);
-            
+            draw_rectangle(app, scopeLine, 0.0f, color);
+
             xScopeOffset += (metrics.space_advance * global_config.indent_width);
         }
     }
@@ -548,17 +587,17 @@ ryanb_draw_scope_annotations(Application_Links *app, Buffer_ID buffer, Text_Layo
 function void
 ryanb_render_buffer(Application_Links *app, Frame_Info frame_info, View_ID view_id, Face_ID face_id, Buffer_ID buffer, Text_Layout_ID text_layout_id, Rect_f32 rect) {
     ProfileScope(app, "ryanb render buffer");
-    
+
     View_ID active_view = get_active_view(app, Access_Always);
     b32 is_active_view = (active_view == view_id);
     Rect_f32 prev_clip = draw_set_clip(app, rect);
-    
+
     // NOTE(allen): Token colorizing
     Token_Array token_array = get_token_array_from_buffer(app, buffer);
     if (token_array.tokens != 0) {
         //draw_cpp_token_colors(app, text_layout_id, &token_array);
         ryanb_draw_cpp_token_colors(app, text_layout_id, &token_array);
-        
+
         // NOTE(allen): Scan for TODOs and NOTEs
         if (global_config.use_comment_keyword) {
             Comment_Highlight_Pair pairs[] = {
@@ -572,16 +611,16 @@ ryanb_render_buffer(Application_Links *app, Frame_Info frame_info, View_ID view_
         Range_i64 visible_range = text_layout_get_visible_range(app, text_layout_id);
         paint_text_color_fcolor(app, text_layout_id, visible_range, fcolor_id(defcolor_text_default));
     }
-    
+
     i64 cursor_pos = view_correct_cursor(app, view_id);
     view_correct_mark(app, view_id);
-    
+
     // NOTE(allen): Scope highlight
     if (global_config.use_scope_highlight) {
         Color_Array colors = finalize_color_array(defcolor_back_cycle);
         draw_scope_highlight(app, buffer, text_layout_id, cursor_pos, colors.vals, colors.count);
     }
-    
+
     if (global_config.use_error_highlight || global_config.use_jump_highlight) {
         // NOTE(allen): Error highlight
         String_Const_u8 name = string_u8_litexpr("*compilation*");
@@ -589,7 +628,7 @@ ryanb_render_buffer(Application_Links *app, Frame_Info frame_info, View_ID view_
         if (global_config.use_error_highlight) {
             draw_jump_highlights(app, buffer, text_layout_id, compilation_buffer, fcolor_id(defcolor_highlight_junk));
         }
-        
+
         // NOTE(allen): Search highlight
         if (global_config.use_jump_highlight) {
             Buffer_ID jump_buffer = get_locked_jump_buffer(app);
@@ -598,46 +637,46 @@ ryanb_render_buffer(Application_Links *app, Frame_Info frame_info, View_ID view_
             }
         }
     }
-    
+
     // NOTE(allen): Color parens
     if (global_config.use_paren_helper) {
         Color_Array colors = finalize_color_array(defcolor_text_cycle);
         draw_paren_highlight(app, buffer, text_layout_id, cursor_pos, colors.vals, colors.count);
     }
-    
+
     // NOTE(allen): Line highlight
     if (global_config.highlight_line_at_cursor && is_active_view) {
         i64 line_number = get_line_number_from_pos(app, buffer, cursor_pos);
         draw_line_highlight(app, text_layout_id, line_number, fcolor_id(defcolor_highlight_cursor_line));
     }
-    
+
+    ryanb_paint_brace_highlight(app, buffer, text_layout_id, cursor_pos);
     ryanb_paint_tokens(app, buffer, text_layout_id);
     ryanb_draw_hex_color_preview(app, buffer, text_layout_id, cursor_pos);
-    
+
     // NOTE(allen): Cursor shape
     Face_Metrics metrics = get_face_metrics(app, face_id);
     f32 cursor_roundness = (metrics.normal_advance*0.5f)*0.9f;
     f32 mark_thickness = 2.f;
-    
+
     // NOTE(allen): Cursor
     switch (fcoder_mode) {
         case FCoderMode_Original: {
             draw_original_4coder_style_cursor_mark_highlight(app, view_id, is_active_view, buffer, text_layout_id, cursor_roundness, mark_thickness);
         }
         break;
-        
+
         case FCoderMode_NotepadLike: {
             //draw_notepad_style_cursor_highlight(app, view_id, buffer, text_layout_id, cursor_roundness);
             ryanb_draw_notepad_style_cursor_highlight(app, frame_info, view_id, is_active_view, buffer, text_layout_id, cursor_roundness);
         }
         break;
     }
-    
+
     // NOTE(allen): put the actual text on the actual screen
     draw_text_layout_default(app, text_layout_id);
-    
     ryanb_draw_scope_annotations(app, buffer, text_layout_id, cursor_pos, rect);
-    
+
     draw_set_clip(app, prev_clip);
 }
 
@@ -649,19 +688,19 @@ ryanb_render_buffer(Application_Links *app, Frame_Info frame_info, View_ID view_
 CUSTOM_COMMAND_SIG(ryanb_write_text) {
     View_ID view = get_active_view(app, Access_ReadWriteVisible);
     Buffer_ID buffer = view_get_buffer(app, view, Access_ReadWriteVisible);
-    
+
     // skip when in comments
     i64 start = get_start_of_line_at_cursor(app, view, buffer);
     if (c_line_comment_starts_at_position(app, buffer, start)) {
         write_text_input(app);
         return;
     }
-    
+
     i64 pos = view_get_cursor_pos(app, view);
-    
+
     User_Input in = get_current_input(app);
     String_Const_u8 insert = to_writable(&in);
-    
+
     b32 isQuote = false;
     b32 isClosingBrace = false;
     if (insert.str != 0 && insert.size > 0) {
@@ -670,41 +709,41 @@ CUSTOM_COMMAND_SIG(ryanb_write_text) {
                 write_string(app, string_u8_litexpr("{}"));
             }
             break;
-            
+
             case '(': {
                 write_string(app, string_u8_litexpr("()"));
             }
             break;
-            
+
             case '[': {
                 write_string(app, string_u8_litexpr("[]"));
             }
             break;
-            
+
             case '}':
             case ')':
             case ']': {
                 isClosingBrace = true;
             }
             break;
-            
+
             case '\'':
             case '\"': {
                 isQuote = true;
             }
             break;
-            
+
             default: {
                 write_text_input(app);
                 return;
             }
         }
     }
-    
+
     if (isClosingBrace || isQuote) {
         u8 nextCharacter = 0;
         buffer_read_range(app, buffer, Ii64(pos, pos + 1), &nextCharacter);
-        
+
         if (insert.str[0] != nextCharacter) {
             write_string(app, SCu8(insert.str, 1));
             if (isQuote) {
@@ -712,7 +751,7 @@ CUSTOM_COMMAND_SIG(ryanb_write_text) {
             }
         }
     }
-    
+
     view_set_cursor_and_preferred_x(app, view, seek_pos(pos + 1));
 }
 
@@ -726,9 +765,9 @@ CUSTOM_COMMAND_SIG(ryanb_goto_bookmark) {
     View_ID view = global_bookmark.view;
     Buffer_ID buffer = global_bookmark.buffer;
     i64 pos = global_bookmark.pos;
-    
+
     ryanb_bookmark_location(app);
-    
+
     switch_to_existing_view(app, view, buffer);
     set_view_to_location(app, view, buffer, seek_pos(pos));
     view_set_active(app, view);
@@ -742,20 +781,20 @@ CUSTOM_COMMAND_SIG(ryanb_goto_end_of_file) {
 
 CUSTOM_COMMAND_SIG(ryanb_goto_function) {
     Scratch_Block scratch(app);
-    
+
     View_ID view = get_active_view(app, Access_ReadVisible);
     Buffer_ID buffer_id = view_get_buffer(app, view, Access_ReadVisible);
-    
+
     i64 pos = view_get_cursor_pos(app, view);
     Range_i64 range = enclose_pos_alpha_numeric_underscore(app, buffer_id, pos);
     String_Const_u8 query = push_buffer_range(app, scratch, buffer_id, range);
-    
+
     code_index_lock();
-    
+
     for (Buffer_ID buffer = get_buffer_next(app, 0, Access_Always); buffer != 0; buffer = get_buffer_next(app, buffer, Access_Always)) {
         Code_Index_File* file = code_index_get_file(buffer);
         if (file == 0) continue;
-        
+
         for (i32 i = 0; i < file->note_array.count; ++i) {
             Code_Index_Note* note = file->note_array.ptrs[i];
             if (string_match(note->text, query)) {
@@ -767,7 +806,7 @@ CUSTOM_COMMAND_SIG(ryanb_goto_function) {
             }
         }
     }
-    
+
     code_index_unlock();
 }
 
@@ -831,35 +870,35 @@ CUSTOM_COMMAND_SIG(ryanb_rename_identifier) {
     View_ID view = get_active_view(app, Access_ReadWriteVisible);
     Buffer_ID buffer = view_get_buffer(app, view, Access_ReadWriteVisible);
     if (buffer == 0) return;
-    
+
     Scratch_Block scratch(app);
-    
+
     i64 pos = view_get_cursor_pos(app, view);
     Range_i64 range = enclose_pos_alpha_numeric_underscore(app, buffer, pos);
     String_Const_u8 identifier = push_buffer_range(app, scratch, buffer, range);
     if (identifier.size != 0) {
         Query_Bar_Group group(app);
-        
+
         Query_Bar replace = { };
         replace.prompt = string_u8_litexpr("Give a new name to ");
         replace.string = identifier;
-        
+
         start_query_bar(app, &replace, 0);
-        
+
         u8 with_space[1024];
-        
+
         Query_Bar with = { };
         with.prompt = string_u8_litexpr("Name: ");
         with.string = SCu8(with_space, (u64)0);
         with.string_capacity = sizeof(with_space);
-        
+
         if (query_user_string(app, &with)) {
             global_history_edit_group_begin(app);
-            
+
             for (Buffer_ID next = get_buffer_next(app, 0, Access_ReadWriteVisible); next != 0; next = get_buffer_next(app, next, Access_ReadWriteVisible)) {
                 replace_in_range(app, next, buffer_range(app, buffer), replace.string, with.string);
             }
-            
+
             global_history_edit_group_end(app);
         }
     }
@@ -873,16 +912,16 @@ void ryanb_render_caller(Application_Links* app, Frame_Info frame_info, View_ID 
     ProfileScope(app, "ryanb render caller");
     View_ID active_view = get_active_view(app, Access_Always);
     b32 is_active_view = (active_view == view_id);
-    
+
     Rect_f32 region = draw_background_and_margin(app, view_id, is_active_view);
     Rect_f32 prev_clip = draw_set_clip(app, region);
-    
+
     Buffer_ID buffer = view_get_buffer(app, view_id, Access_Always);
     Face_ID face_id = get_face_id(app, buffer);
     Face_Metrics face_metrics = get_face_metrics(app, face_id);
     f32 line_height = face_metrics.line_height;
     f32 digit_advance = face_metrics.decimal_digit_advance;
-    
+
     // NOTE(allen): file bar
     b64 showing_file_bar = false;
     if (view_get_setting(app, view_id, ViewSetting_ShowFileBar, &showing_file_bar) && showing_file_bar) {
@@ -891,9 +930,9 @@ void ryanb_render_caller(Application_Links* app, Frame_Info frame_info, View_ID 
         ryanb_draw_file_bar(app, view_id, buffer, face_id, pair.min);
         region = pair.max;
     }
-    
+
     Buffer_Scroll scroll = view_get_buffer_scroll(app, view_id);
-    
+
     Buffer_Point_Delta_Result delta = delta_apply(app, view_id, frame_info.animation_dt, scroll);
     if (!block_match_struct(&scroll.position, &delta.point)) {
         block_copy_struct(&scroll.position, &delta.point);
@@ -902,7 +941,7 @@ void ryanb_render_caller(Application_Links* app, Frame_Info frame_info, View_ID 
     if (delta.still_animating) {
         animate_in_n_milliseconds(app, 0);
     }
-    
+
     // NOTE(allen): query bars
     {
         Query_Bar *space[32];
@@ -916,7 +955,7 @@ void ryanb_render_caller(Application_Links* app, Frame_Info frame_info, View_ID 
             }
         }
     }
-    
+
     // NOTE(allen): FPS hud
     if (show_fps_hud) {
         Rect_f32_Pair pair = layout_fps_hud_on_bottom(region, line_height);
@@ -924,7 +963,7 @@ void ryanb_render_caller(Application_Links* app, Frame_Info frame_info, View_ID 
         region = pair.min;
         animate_in_n_milliseconds(app, 1000);
     }
-    
+
     // NOTE(allen): layout line numbers
     Rect_f32 line_number_rect = { };
     if (global_config.show_line_number_margins) {
@@ -933,20 +972,20 @@ void ryanb_render_caller(Application_Links* app, Frame_Info frame_info, View_ID 
         line_number_rect = pair.min;
         region = pair.max;
     }
-    
+
     // NOTE(allen): begin buffer render
     Buffer_Point buffer_point = scroll.position;
     Text_Layout_ID text_layout_id = text_layout_create(app, buffer, region, buffer_point);
-    
+
     // NOTE(allen): draw line numbers
     if (global_config.show_line_number_margins) {
         draw_line_number_margin(app, view_id, buffer, face_id, text_layout_id, line_number_rect);
     }
-    
+
     // NOTE(allen): draw the buffer
     //default_render_buffer(app, view_id, face_id, buffer, text_layout_id, region);
     ryanb_render_buffer(app, frame_info, view_id, face_id, buffer, text_layout_id, region);
-    
+
     text_layout_free(app, text_layout_id);
     draw_set_clip(app, prev_clip);
 }
@@ -958,15 +997,15 @@ void ryanb_render_caller(Application_Links* app, Frame_Info frame_info, View_ID 
 void ryanb_setup_default_mapping(Mapping* mapping, i64 global_id, i64 file_id, i64 code_id) {
     MappingScope();
     SelectMapping(mapping);
-    
+
     // global bindings
     SelectMap(global_id);
-    
+
     BindCore(default_startup,  CoreCode_Startup);
     BindCore(default_try_exit, CoreCode_TryExit);
-    
+
     BindMouseWheel(mouse_wheel_scroll);
-    
+
     Bind(exit_4coder,                     KeyCode_F4,     KeyCode_Alt);                     // alt + f4         : close 4coder
     Bind(toggle_fullscreen,               KeyCode_F11);                                     // f11              : toggle full screen
     Bind(close_build_footer_panel,        KeyCode_Escape);                                  // esc              : close open build panel
@@ -980,19 +1019,19 @@ void ryanb_setup_default_mapping(Mapping* mapping, i64 global_id, i64 file_id, i
     Bind(ryanb_interactive_open_all_code, KeyCode_O,     KeyCode_Control, KeyCode_Shift);   // ctrl + shift + o : open existing file prompt and open all code near that file
     Bind(interactive_switch_buffer,       KeyCode_W,     KeyCode_Control);                  // ctrl + w         : switch buffer prompt
     Bind(exit_4coder,                     KeyCode_Q,     KeyCode_Control);                  // ctrl + q         : try to quit
-    
+
     // plain text file bindings
     SelectMap(file_id);
     ParentMap(global_id);
-    
+
     BindCore(click_set_cursor_and_mark, CoreCode_ClickActivateView);
-    
+
     BindMouse(click_set_cursor_and_mark, MouseCode_Left);
     BindMouseMove(click_set_cursor_if_lbutton);
     BindMouseRelease(click_set_cursor, MouseCode_Left);
-    
+
     BindTextInput(write_text_input);
-    
+
     Bind(rename_file_query,               KeyCode_F2,     KeyCode_Control);                // ctrl + f2        : rename file prompt
     Bind(backspace_char,                  KeyCode_Backspace);                              // backspace        : delete previous character
     Bind(delete_char,                     KeyCode_Delete);                                 // del              : delete next character
@@ -1034,13 +1073,13 @@ void ryanb_setup_default_mapping(Mapping* mapping, i64 global_id, i64 file_id, i
     Bind(cut,                             KeyCode_X,      KeyCode_Control);                // ctrl + x         : cut current selection
     Bind(undo,                            KeyCode_Z,      KeyCode_Control);                // ctrl + z         : undo
     Bind(redo,                            KeyCode_Z,      KeyCode_Control, KeyCode_Shift); // ctrl + shift + z : redo
-    
+
     // code file bindings
     SelectMap(code_id);
     ParentMap(file_id);
-    
+
     BindTextInput(ryanb_write_text);
-    
+
     Bind(ryanb_rename_identifier,         KeyCode_F2);                            // F2           : rename identifier in all open buffers
     Bind(ryanb_move_left_token_boundary,  KeyCode_Left,         KeyCode_Control); // ctrl + left  : seek token left
     Bind(ryanb_move_right_token_boundary, KeyCode_Right,        KeyCode_Control); // ctrl + right : seek token right
@@ -1058,7 +1097,7 @@ void ryanb_setup_default_mapping(Mapping* mapping, i64 global_id, i64 file_id, i
 
 void custom_layer_init(Application_Links* app) {
     Thread_Context* tctx = get_thread_context(app);
-    
+
     async_task_handler_init(app, &global_async_system);
     code_index_init();
     buffer_modified_set_init();
@@ -1066,7 +1105,7 @@ void custom_layer_init(Application_Links* app) {
     ProfileThreadName(tctx, list, string_u8_litexpr("main"));
     initialize_managed_id_metadata(app);
     set_default_color_scheme(app);
-    
+
     set_all_default_hooks(app);
     set_custom_hook(app, HookID_RenderCaller, ryanb_render_caller);
     mapping_init(tctx, &framework_mapping);
