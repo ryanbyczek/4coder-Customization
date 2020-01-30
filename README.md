@@ -5,6 +5,7 @@ These files are to be placed under the 4coder\custom directory.
 
 Features:
 * Jump to function under cursor, with the ability to jump back afterwards
+* Blinking cursor when in notepad-like mode
 * More informative File Bar
 * Preview hex color codes that lie under the cursor
 * Draw guide-lines from scope start to scope end
