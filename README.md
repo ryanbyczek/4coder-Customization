@@ -10,6 +10,7 @@ Features:
 * Preview hex color codes that lie under the cursor
 * Draw guide-lines from scope start to scope end
 * Annotate scope end with scope start
+* Highlight braces at current scope
 * Configurable margin for line number gutter
 * Extend token colorization to structs and functions (second color on defcolor_keyword)
 * Extend token colorization to C++ operators (third color on defcolor_keyword)
@@ -17,7 +18,7 @@ Features:
 
 Includes customized versions of code from the following:
 
-scope lines and annotation code, and .bat file from https://github.com/ryanfleury/4coder_fleury
+scope lines, brace highlights and scope annotation code, and .bat file from https://github.com/ryanfleury/4coder_fleury
 
 struct and function highlight code from: https://github.com/Skytrias/4files
 
