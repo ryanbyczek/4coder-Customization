@@ -2,7 +2,8 @@
 My 4coder customization layer for 4coder 4.1.2+ (Beta)
 
 * 4coder_ryanb.cpp and 4coder_ryanb_build.bat go in: 4coder\custom
-* theme-ryanb.4coder goes in: 4coder\themes
+* theme-ryanb.4coder (optional) goes in: 4coder\themes
+* config.4coder (optional) goes in: 4coder\
 
 Features:
 * Blinking cursor when in notepad-like mode
