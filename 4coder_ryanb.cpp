@@ -8,10 +8,6 @@
 // struct/function highlight code from: https://github.com/Skytrias/4files
 // hex color preview code from: https://gist.github.com/thevaber/58bb6a1c03ebe56309545f413e898a95
 
-// TODO: old features left to migrate...
-// open/close panel (need numpad key bindings)
-// kill buffer (need numpad key bindings)
-
 // TODO: features to add...
 // change () scope highlight to match style of my {} highlight
 // better virtual whitespace for ternary operator
@@ -831,6 +827,7 @@ CUSTOM_COMMAND_SIG(ryanb_kill_buffer) {
     }
     else {
         kill_buffer(app);
+        close_panel(app);
     }
 }
 
@@ -857,6 +854,13 @@ CUSTOM_COMMAND_SIG(ryanb_move_right_token_boundary) {
 CUSTOM_COMMAND_SIG(ryanb_move_up_to_blank_line) {
     move_up_to_blank_line(app);
     center_view(app);
+}
+
+CUSTOM_COMMAND_SIG(ryanb_open_panel_vsplit) {
+    open_panel_vsplit(app);
+    swap_panels(app);
+    change_active_panel(app);
+    interactive_switch_buffer(app);
 }
 
 CUSTOM_COMMAND_SIG(ryanb_page_down) {
@@ -1009,19 +1013,21 @@ void ryanb_setup_default_mapping(Mapping* mapping, i64 global_id, i64 file_id, i
 
     BindMouseWheel(mouse_wheel_scroll);
 
-    Bind(exit_4coder,                     KeyCode_F4,     KeyCode_Alt);                     // alt + f4         : close 4coder
-    Bind(toggle_fullscreen,               KeyCode_F11);                                     // f11              : toggle full screen
-    Bind(close_build_footer_panel,        KeyCode_Escape);                                  // esc              : close open build panel
-    Bind(change_active_panel,             KeyCode_Comma, KeyCode_Control);                  // ctrl + ,         : switch active panel
-    Bind(swap_panels,                     KeyCode_Comma, KeyCode_Control, KeyCode_Shift);   // ctrl + shift + , : swap panels
-    //Bind(open_panel_vsplit,               KeyCode_NumPlus,  KeyCode_Control);               // ctrl + +         : open split panel
-    //Bind(close_panel,                     KeyCode_NumMinus, KeyCode_Control);               // ctrl + -         : close split panel
-    Bind(build_in_build_panel,            KeyCode_B,     KeyCode_Control);                  // ctrl + b         : execute build in build panel
-    Bind(interactive_new,                 KeyCode_N,     KeyCode_Control);                  // ctrl + n         : open new file prompt
-    Bind(interactive_open,                KeyCode_O,     KeyCode_Control);                  // ctrl + o         : open existing file prompt
-    Bind(ryanb_interactive_open_all_code, KeyCode_O,     KeyCode_Control, KeyCode_Shift);   // ctrl + shift + o : open existing file prompt and open all code near that file
-    Bind(interactive_switch_buffer,       KeyCode_W,     KeyCode_Control);                  // ctrl + w         : switch buffer prompt
-    Bind(exit_4coder,                     KeyCode_Q,     KeyCode_Control);                  // ctrl + q         : try to quit
+    Bind(exit_4coder,                     KeyCode_F4,      KeyCode_Alt);                                // alt  + f4              : close 4coder
+    Bind(toggle_fullscreen,               KeyCode_F11);                                                 // f11                    : toggle full screen
+    Bind(close_build_footer_panel,        KeyCode_Escape);                                              // esc                    : close open build panel
+    Bind(change_active_panel,             KeyCode_Comma,  KeyCode_Control);                             // ctrl + ,               : switch active panel
+    Bind(swap_panels,                     KeyCode_Comma,  KeyCode_Control, KeyCode_Shift);              // ctrl + shift + ,       : swap panels
+    Bind(ryanb_open_panel_vsplit,         KeyCode_Equal,  KeyCode_Control, KeyCode_Shift);              // ctrl + shift + +       : open split panel and open switch buffer prompt
+    Bind(ryanb_goto_bookmark,             KeyCode_Minus,  KeyCode_Control);                             // ctrl + -               : bookmark current position and go to last bookmarked location
+    Bind(close_panel,                     KeyCode_Minus,  KeyCode_Control, KeyCode_Shift);              // ctrl + shift + -       : close panel
+    Bind(ryanb_kill_buffer,               KeyCode_Minus,  KeyCode_Control, KeyCode_Shift, KeyCode_Alt); // ctrl + shift + alt + - : close file or close build panel
+    Bind(build_in_build_panel,            KeyCode_B,      KeyCode_Control);                             // ctrl + b               : execute build in build panel
+    Bind(interactive_new,                 KeyCode_N,      KeyCode_Control);                             // ctrl + n               : open new file prompt
+    Bind(interactive_open,                KeyCode_O,      KeyCode_Control);                             // ctrl + o               : open existing file prompt
+    Bind(ryanb_interactive_open_all_code, KeyCode_O,      KeyCode_Control, KeyCode_Shift);              // ctrl + shift + o       : open existing file prompt and open all code near that file
+    Bind(interactive_switch_buffer,       KeyCode_W,      KeyCode_Control);                             // ctrl + w               : switch buffer prompt
+    Bind(exit_4coder,                     KeyCode_Q,      KeyCode_Control);                             // ctrl + q               : try to quit
 
     // plain text file bindings
     SelectMap(file_id);
@@ -1046,17 +1052,15 @@ void ryanb_setup_default_mapping(Mapping* mapping, i64 global_id, i64 file_id, i
     Bind(ryanb_page_down,                 KeyCode_PageDown);                               // page down        : page down and center view
     Bind(ryanb_page_up,                   KeyCode_PageUp);                                 // page up          : page up and center view
     Bind(move_up,                         KeyCode_Up);                                     // up               : seek line up
-    Bind(move_line_up,                    KeyCode_Up,     KeyCode_Alt);                    // alt + up         : move line up
+    Bind(move_line_up,                    KeyCode_Up,     KeyCode_Alt);                    // alt  + up        : move line up
     Bind(ryanb_move_up_to_blank_line,     KeyCode_Up,     KeyCode_Control);                // ctrl + up        : seek whitespace up and center view
     Bind(move_down,                       KeyCode_Down);                                   // down             : seek line down
-    Bind(move_line_down,                  KeyCode_Down,   KeyCode_Alt);                    // alt + down       : move line down
+    Bind(move_line_down,                  KeyCode_Down,   KeyCode_Alt);                    // alt  + down      : move line down
     Bind(ryanb_move_down_to_blank_line,   KeyCode_Down,   KeyCode_Control);                // ctrl + down      : seek whitespace down and center view
     Bind(move_left,                       KeyCode_Left);                                   // left             : seek character left
     Bind(ryanb_move_left_token_boundary,  KeyCode_Left,   KeyCode_Control);                // ctrl + left      : seek token left
     Bind(move_right,                      KeyCode_Right);                                  // right            : seek character right
     Bind(ryanb_move_right_token_boundary, KeyCode_Right,  KeyCode_Control);                // ctrl + right     : seek token right
-    //Bind(ryanb_kill_buffer,               KeyCode_NumStar,   KeyCode_Control);             // ctrl + *         : close file or close build panel
-    Bind(ryanb_goto_bookmark,             KeyCode_Minus,  KeyCode_Control);                // ctrl + -         : Bookmark current position and go to last bookmarked location
     Bind(center_view,                     KeyCode_Space,  KeyCode_Control);                // ctrl + space     : center view
     Bind(select_all,                      KeyCode_A,      KeyCode_Control);                // ctrl + a         : select all
     Bind(copy,                            KeyCode_C,      KeyCode_Control);                // ctrl + c         : copy selection
@@ -1086,11 +1090,12 @@ void ryanb_setup_default_mapping(Mapping* mapping, i64 global_id, i64 file_id, i
     Bind(ryanb_rename_identifier,         KeyCode_F2);                            // F2           : rename identifier in all open buffers
     Bind(ryanb_move_left_token_boundary,  KeyCode_Left,         KeyCode_Control); // ctrl + left  : seek token left
     Bind(ryanb_move_right_token_boundary, KeyCode_Right,        KeyCode_Control); // ctrl + right : seek token right
+
     Bind(word_complete,                   KeyCode_Tab);                           // tab          : auto-complete current word
-    Bind(comment_line_toggle,             KeyCode_ForwardSlash, KeyCode_Control); // ctrl + /     : toggle line comment
-    Bind(ryanb_goto_function,             KeyCode_Return,       KeyCode_Control); // ctrl + enter : go to function declaration for function under cursor
-    Bind(write_note,                      KeyCode_N,            KeyCode_Alt);     // alt + n      : write a NOTE comment
-    Bind(write_todo,                      KeyCode_T,            KeyCode_Alt);     // alt + t      : write a TODO comment
+    Bind(comment_line_toggle,             KeyCode_ForwardSlash, KeyCode_Alt);     // alt  + /     : toggle line comment
+    Bind(ryanb_goto_function,             KeyCode_Return,       KeyCode_Control); // ctrl + enter : bookmark current position and go to function declaration for function under cursor
+    Bind(write_note,                      KeyCode_N,            KeyCode_Alt);     // alt  + n     : write a NOTE comment
+    Bind(write_todo,                      KeyCode_T,            KeyCode_Alt);     // alt  + t     : write a TODO comment
     Bind(paste_and_indent,                KeyCode_V,            KeyCode_Control); // ctrl + v     : paste and indent
 }
 
