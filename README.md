@@ -5,14 +5,14 @@ My 4coder customization layer for 4coder 4.1.2+ (Beta)
 * theme-ryanb.4coder goes in: 4coder\themes
 
 Features:
-* Jump to function under cursor, with the ability to jump back afterwards
 * Blinking cursor when in notepad-like mode
+* Jump to function under cursor, with the ability to jump back afterwards (ctrl+return when cursor is on function, ctrl+- to jump back)
 * More informative File Bar
-* Preview hex color codes that lie under the cursor
-* Draw guide-lines from scope start to scope end
-* Annotate scope end with scope start
-* Highlight braces at current scope
-* Configurable margin for line number gutter
+* Preview hex color codes that lie under the cursor (when cursor is on any hex color value)
+* Draw guide-lines from scope start to scope end (when within scope)
+* Annotate scope end with scope start (when within scope)
+* Highlight braces at current scope (when within scope)
+* Configurable margin for line number gutter (line_number_margin value in 4coder_raynb.cpp)
 * Extend token colorization to structs and functions (second color on defcolor_keyword)
 * Extend token colorization to C++ operators (third color on defcolor_keyword)
 * Extend token colorization to scope annotations (second color on defcolor_comment)
