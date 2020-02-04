@@ -13,9 +13,11 @@
 // kill buffer (need numpad key bindings)
 
 // TODO: features to add...
+// change () scope highlight to match style of my {} highlight
 // better virtual whitespace for ternary operator
 // code folding (ctrol+m+o)
 // rename symbol (f2) --> match only on full word and case (using replace_in_all_buffers, query_replace_identifier)
+// allow cursor to exist outside of view
 // spawn multiple cursors (ctrl+shift+down/up)
 // function prototype helper
 // type helper
@@ -27,7 +29,7 @@
 /////////////////////////////////////////////////////////////////////////////
 
 namespace {
-    struct bookmark {
+    struct Bookmark {
         Buffer_ID buffer;
         View_ID   view;
         i64       pos;
@@ -50,7 +52,7 @@ namespace {
 /////////////////////////////////////////////////////////////////////////////
 
 namespace {
-    bookmark global_bookmark;
+    Bookmark global_bookmark;
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -225,7 +227,9 @@ ryanb_paint_brace_highlight(Application_Links* app, Buffer_ID buffer, Text_Layou
     Range_i64 range;
     if (find_surrounding_nest(app, buffer, pos, FindNest_Scope, &range)) {
 
-        ARGB_Color color = fcolor_resolve(fcolor_id(defcolor_highlight));
+        //ARGB_Color color = fcolor_resolve(fcolor_id(defcolor_highlight));
+        ARGB_Color color = finalize_color(defcolor_text_cycle, 0);
+
         draw_character_block(app, text_layout_id, range.min, 0.0f, color);
         draw_character_block(app, text_layout_id, (range.max - 1), 0.0f, color);
 
@@ -241,33 +245,33 @@ ryanb_paint_tokens(Application_Links* app, Buffer_ID buffer, Text_Layout_ID text
 
     Scratch_Block scratch(app);
 
-    Range_i64 functionNameRange = { };
+    Range_i64 function_name_range = { };
 
 	Token_Array array = get_token_array_from_buffer(app, buffer);
     if (array.tokens != 0) {
-        Range_i64 visibleRange = text_layout_get_visible_range(app, text_layout_id);
-        i64 first = token_index_from_pos(&array, visibleRange.first);
+        Range_i64 visible_range = text_layout_get_visible_range(app, text_layout_id);
+        i64 first = token_index_from_pos(&array, visible_range.first);
         Token_Iterator_Array it = token_iterator_index(0, &array, first);
         for (;;) {
             Token* token = token_it_read(&it);
 
-            if (token->pos >= visibleRange.one_past_last) {
+            if (token->pos >= visible_range.one_past_last) {
                 break;
             }
 
             switch (token->kind) {
                 case TokenBaseKind_ParentheticalOpen: {
                     // end function token range
-                    if (functionNameRange.max == 0) {
-                        functionNameRange.max = token->pos;
+                    if (function_name_range.max == 0) {
+                        function_name_range.max = token->pos;
                     }
                 }
                 break;
 
                 case TokenBaseKind_Identifier: {
                     // start function token range
-                    if (functionNameRange.min == 0 && functionNameRange.max == 0) {
-                        functionNameRange.min = token->pos;
+                    if (function_name_range.min == 0 && function_name_range.max == 0) {
+                        function_name_range.min = token->pos;
                     }
 
                     // detect and paint struct tokens
@@ -296,14 +300,14 @@ ryanb_paint_tokens(Application_Links* app, Buffer_ID buffer, Text_Layout_ID text
                 break;
 
                 default: {
-                    functionNameRange = { };
+                    function_name_range = { };
                 }
             }
 
             // paint function tokens
-            if (functionNameRange.min != 0 && functionNameRange.max != 0) {
-                paint_text_color(app, text_layout_id, functionNameRange, finalize_color(defcolor_keyword, 1));
-                functionNameRange = { };
+            if (function_name_range.min != 0 && function_name_range.max != 0) {
+                paint_text_color(app, text_layout_id, function_name_range, finalize_color(defcolor_keyword, 1));
+                function_name_range = { };
             }
 
             if (!token_it_inc_all(&it)) {
@@ -325,7 +329,6 @@ ryanb_draw_cpp_token_colors(Application_Links *app, Text_Layout_ID text_layout_i
         if (token->pos >= visible_range.one_past_last) {
             break;
         }
-        //FColor color = get_token_color_cpp(*token);
         FColor color = ryanb_get_token_color_cpp(*token);
         ARGB_Color argb = fcolor_resolve(color);
         paint_text_color(app, text_layout_id, Ii64_size(token->pos, token->size), argb);
@@ -431,19 +434,19 @@ ryanb_draw_hex_color_preview(Application_Links* app, Buffer_ID buffer, Text_Layo
     String_Const_u8 identifier = push_buffer_range(app, scratch, buffer, range);
     if (identifier.size == 10) {
         if (identifier.str[0] == '0' && (identifier.str[1] == 'x' || identifier.str[1] == 'X')) {
-            b32 isHex = true;
-            for (u32 i = 0; (i < 8) && isHex; ++i) {
+            b32 is_hex = true;
+            for (u32 i = 0; (i < 8) && is_hex; ++i) {
                 char c = identifier.str[i + 2];
-                isHex = ((c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f') || (c >= '0' && c <= '9'));
+                is_hex = ((c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f') || (c >= '0' && c <= '9'));
             }
 
-            if (isHex) {
+            if (is_hex) {
                 String_Const_u8 hex = string_substring(identifier, Ii64_size(2, 8));
 
-                ARGB_Color hexColor = (u32)string_to_integer(hex, 16);
-                draw_character_block(app, text_layout_id, Ii64_size(range.min, 10), 2.0f, hexColor);
+                ARGB_Color hex_color = (u32)string_to_integer(hex, 16);
+                draw_character_block(app, text_layout_id, Ii64_size(range.min, 10), 2.0f, hex_color);
 
-                ARGB_Color textColor = ryanb_calculate_color_brightness(hexColor) < 128 ? 0xFFFFFFFF : 0xFF000000;
+                ARGB_Color textColor = ryanb_calculate_color_brightness(hex_color) < 128 ? 0xFFFFFFFF : 0xFF000000;
                 paint_text_color(app, text_layout_id, range, textColor);
             }
         }
@@ -499,9 +502,9 @@ ryanb_draw_scope_annotations(Application_Links *app, Buffer_ID buffer, Text_Layo
     Face_ID faceID = get_face_id(app, buffer);
     Face_Metrics metrics = get_face_metrics(app, faceID);
 
-    Token_Array tokenArray = get_token_array_from_buffer(app, buffer);
-    if (tokenArray.tokens != 0) {
-        Token_Iterator_Array it = token_iterator_pos(0, &tokenArray, pos);
+    Token_Array token_array = get_token_array_from_buffer(app, buffer);
+    if (token_array.tokens != 0) {
+        Token_Iterator_Array it = token_iterator_pos(0, &token_array, pos);
         Token* token = token_it_read(&it);
 
         if (token != 0 && token->kind == TokenBaseKind_ScopeOpen) {
@@ -516,15 +519,15 @@ ryanb_draw_scope_annotations(Application_Links *app, Buffer_ID buffer, Text_Layo
         }
     }
 
-    f32 xScopeOffset = rect.x0;
+    f32 scope_offset_x = rect.x0;
 
     Range_i64_Array ranges = get_enclosure_ranges(app, scratch, buffer, pos, RangeHighlightKind_CharacterHighlight);
     for (i32 i = ranges.count - 1; i >= 0; --i) {
         Range_i64 range = ranges.ranges[i];
 
         int nest = 0;
-        Token* startToken = 0;
-        Token_Iterator_Array it = token_iterator_pos(0, &tokenArray, range.start - 1);
+        Token* start_token = 0;
+        Token_Iterator_Array it = token_iterator_pos(0, &token_array, range.start - 1);
         for (Token* token = token_it_read(&it); token && token_it_dec_non_whitespace(&it); token = token_it_read(&it)) {
             if (token->kind == TokenBaseKind_ParentheticalClose) {
                 ++nest;
@@ -536,24 +539,24 @@ ryanb_draw_scope_annotations(Application_Links *app, Buffer_ID buffer, Text_Layo
                 break;
             }
             else if (nest == 0 && (token->kind == TokenBaseKind_Identifier || token->kind == TokenBaseKind_Keyword || token->kind == TokenBaseKind_Comment)) {
-                startToken = token;
+                start_token = token;
                 break;
             }
         }
 
         //
-        if (startToken) {
+        if (start_token) {
             ARGB_Color color = finalize_color(defcolor_comment, 1);
 
-            Rect_f32 rectStart = text_layout_character_on_screen(app, text_layout_id, range.start);
-            Rect_f32 rectEnd   = text_layout_character_on_screen(app, text_layout_id, range.end);
+            Rect_f32 rect_start = text_layout_character_on_screen(app, text_layout_id, range.start);
+            Rect_f32 rect_end   = text_layout_character_on_screen(app, text_layout_id, range.end);
 
             // draw annotation
-            String_Const_u8 annotation = push_buffer_line(app, scratch, buffer, get_line_number_from_pos(app, buffer, startToken->pos));
+            String_Const_u8 annotation = push_buffer_line(app, scratch, buffer, get_line_number_from_pos(app, buffer, start_token->pos));
 
-            u64 annotationStart = ryanb_string_find_first_non_whitespace(annotation);
-            annotation.str  += annotationStart;
-            annotation.size -= annotationStart;
+            u64 annotation_start = ryanb_string_find_first_non_whitespace(annotation);
+            annotation.str  += annotation_start;
+            annotation.size -= annotation_start;
 
             if (annotation.str[annotation.size - 1] == 13) {
                 --annotation.size;
@@ -562,24 +565,24 @@ ryanb_draw_scope_annotations(Application_Links *app, Buffer_ID buffer, Text_Layo
                 --annotation.size;
             }
 
-            Vec2_f32 annotationPosition = { rectEnd.x0, rectEnd.y0 };
+            Vec2_f32 annotation_position = { rect_end.x0, rect_end.y0 };
 
-            annotationPosition.x += metrics.space_advance;
-            draw_string(app, faceID, string_u8_litexpr("<<"), annotationPosition, color);
-            annotationPosition.x += (metrics.space_advance * 3);
-            draw_string(app, faceID, annotation, annotationPosition, color);
+            annotation_position.x += metrics.space_advance;
+            draw_string(app, faceID, string_u8_litexpr("<<"), annotation_position, color);
+            annotation_position.x += (metrics.space_advance * 3);
+            draw_string(app, faceID, annotation, annotation_position, color);
 
             // draw scope lines
-            Range_i64 visibleRange = text_layout_get_visible_range(app, text_layout_id);
+            Range_i64 visible_range = text_layout_get_visible_range(app, text_layout_id);
 
-            Rect_f32 scopeLine;
-            scopeLine.x0 = xScopeOffset;
-            scopeLine.x1 = scopeLine.x0 + scope_line_thickness;
-            scopeLine.y0 = (range.start < visibleRange.start) ? 0.0f : rectStart.y0 + metrics.line_height;
-            scopeLine.y1 = (range.end > visibleRange.end) ? 10000.0f : rectEnd.y0;
-            draw_rectangle(app, scopeLine, 0.0f, color);
+            Rect_f32 scope_line;
+            scope_line.x0 = scope_offset_x;
+            scope_line.x1 = scope_line.x0 + scope_line_thickness;
+            scope_line.y0 = (range.start < visible_range.start) ? 0.0f : rect_start.y0 + metrics.line_height;
+            scope_line.y1 = (range.end > visible_range.end) ? 10000.0f : rect_end.y0;
+            draw_rectangle(app, scope_line, 0.0f, color);
 
-            xScopeOffset += (metrics.space_advance * global_config.indent_width);
+            scope_offset_x += (metrics.space_advance * global_config.indent_width);
         }
     }
 }
@@ -701,8 +704,8 @@ CUSTOM_COMMAND_SIG(ryanb_write_text) {
     User_Input in = get_current_input(app);
     String_Const_u8 insert = to_writable(&in);
 
-    b32 isQuote = false;
-    b32 isClosingBrace = false;
+    b32 is_quote = false;
+    b32 is_closing_brace = false;
     if (insert.str != 0 && insert.size > 0) {
         switch (insert.str[0]) {
             case '{': {
@@ -723,13 +726,13 @@ CUSTOM_COMMAND_SIG(ryanb_write_text) {
             case '}':
             case ')':
             case ']': {
-                isClosingBrace = true;
+                is_closing_brace = true;
             }
             break;
 
             case '\'':
             case '\"': {
-                isQuote = true;
+                is_quote = true;
             }
             break;
 
@@ -740,13 +743,13 @@ CUSTOM_COMMAND_SIG(ryanb_write_text) {
         }
     }
 
-    if (isClosingBrace || isQuote) {
-        u8 nextCharacter = 0;
-        buffer_read_range(app, buffer, Ii64(pos, pos + 1), &nextCharacter);
+    if (is_closing_brace || is_quote) {
+        u8 next_character = 0;
+        buffer_read_range(app, buffer, Ii64(pos, pos + 1), &next_character);
 
-        if (insert.str[0] != nextCharacter) {
+        if (insert.str[0] != next_character) {
             write_string(app, SCu8(insert.str, 1));
-            if (isQuote) {
+            if (is_quote) {
                 write_string(app, SCu8(insert.str, 1));
             }
         }
@@ -1053,7 +1056,7 @@ void ryanb_setup_default_mapping(Mapping* mapping, i64 global_id, i64 file_id, i
     Bind(move_right,                      KeyCode_Right);                                  // right            : seek character right
     Bind(ryanb_move_right_token_boundary, KeyCode_Right,  KeyCode_Control);                // ctrl + right     : seek token right
     //Bind(ryanb_kill_buffer,               KeyCode_NumStar,   KeyCode_Control);             // ctrl + *         : close file or close build panel
-    Bind(ryanb_goto_bookmark,             KeyCode_Minus,  KeyCode_Control);                // ctrl + -         : bookmark current position and go to last bookmarked location
+    Bind(ryanb_goto_bookmark,             KeyCode_Minus,  KeyCode_Control);                // ctrl + -         : Bookmark current position and go to last bookmarked location
     Bind(center_view,                     KeyCode_Space,  KeyCode_Control);                // ctrl + space     : center view
     Bind(select_all,                      KeyCode_A,      KeyCode_Control);                // ctrl + a         : select all
     Bind(copy,                            KeyCode_C,      KeyCode_Control);                // ctrl + c         : copy selection
@@ -1096,6 +1099,7 @@ void ryanb_setup_default_mapping(Mapping* mapping, i64 global_id, i64 file_id, i
 /////////////////////////////////////////////////////////////////////////////
 
 void custom_layer_init(Application_Links* app) {
+
     Thread_Context* tctx = get_thread_context(app);
 
     async_task_handler_init(app, &global_async_system);
