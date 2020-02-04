@@ -820,7 +820,7 @@ CUSTOM_COMMAND_SIG(ryanb_interactive_open_all_code) {
     open_all_code(app);
 }
 
-CUSTOM_COMMAND_SIG(ryanb_kill_buffer) {
+CUSTOM_COMMAND_SIG(ryanb_kill_panel) {
     View_ID view = get_active_view(app, Access_ReadWriteVisible);
     if (view == build_footer_panel_view_id) {
         close_build_footer_panel(app);
@@ -1019,9 +1019,10 @@ void ryanb_setup_default_mapping(Mapping* mapping, i64 global_id, i64 file_id, i
     Bind(change_active_panel,             KeyCode_Comma,  KeyCode_Control);                             // ctrl + ,               : switch active panel
     Bind(swap_panels,                     KeyCode_Comma,  KeyCode_Control, KeyCode_Shift);              // ctrl + shift + ,       : swap panels
     Bind(ryanb_open_panel_vsplit,         KeyCode_Equal,  KeyCode_Control, KeyCode_Shift);              // ctrl + shift + +       : open split panel and open switch buffer prompt
+    // TODO: move ryanb_goto_bookmark back down to code_id map once (if?) fuzzy hotkey matching is changed by Allen
     Bind(ryanb_goto_bookmark,             KeyCode_Minus,  KeyCode_Control);                             // ctrl + -               : bookmark current position and go to last bookmarked location
     Bind(close_panel,                     KeyCode_Minus,  KeyCode_Control, KeyCode_Shift);              // ctrl + shift + -       : close panel
-    Bind(ryanb_kill_buffer,               KeyCode_Minus,  KeyCode_Control, KeyCode_Shift, KeyCode_Alt); // ctrl + shift + alt + - : close file or close build panel
+    Bind(ryanb_kill_panel,                KeyCode_Minus,  KeyCode_Control, KeyCode_Shift, KeyCode_Alt); // ctrl + shift + alt + - : close file and panel
     Bind(build_in_build_panel,            KeyCode_B,      KeyCode_Control);                             // ctrl + b               : execute build in build panel
     Bind(interactive_new,                 KeyCode_N,      KeyCode_Control);                             // ctrl + n               : open new file prompt
     Bind(interactive_open,                KeyCode_O,      KeyCode_Control);                             // ctrl + o               : open existing file prompt
