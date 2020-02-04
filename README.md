@@ -17,10 +17,7 @@ Features:
 * Extend token colorization to C++ operators (third color on defcolor_keyword)
 * Extend token colorization to scope annotations (second color on defcolor_comment)
 
-Includes customized versions of code from the following:
-
-scope lines, brace highlights and scope annotation code, and .bat file from https://github.com/ryanfleury/4coder_fleury
-
-struct and function highlight code from: https://github.com/Skytrias/4files
-
-hex color preview code from: https://gist.github.com/thevaber/58bb6a1c03ebe56309545f413e898a95
+Includes heavily customized versions of code from the following:
+* scope lines, brace highlights, scope annotation and .bat file from https://github.com/ryanfleury/4coder_fleury
+* struct and function painting from: https://github.com/Skytrias/4files
+* hex color preview from: https://gist.github.com/thevaber/58bb6a1c03ebe56309545f413e898a95
