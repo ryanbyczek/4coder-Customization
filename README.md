@@ -1,7 +1,8 @@
 # 4coder Customization
 My 4coder customization layer for 4coder 4.1.2+ (Beta)
 
-These files are to be placed under the 4coder\custom directory.
+* 4coder_ryanb.cpp and 4coder_ryanb_build.bat go in: 4coder\custom
+* theme-ryanb.4coder goes in: 4coder\themes
 
 Features:
 * Jump to function under cursor, with the ability to jump back afterwards
