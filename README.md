@@ -6,14 +6,16 @@ My 4coder customization layer for 4coder 4.1.2+ (Beta)
 * config.4coder (optional) goes in: 4coder\
 
 Features:
+* Search that supports paste from clipboard, advance with enter or tab, reverse with shift+enter or shift+tab
 * Blinking cursor when in notepad-like mode
-* Jump to function under cursor, with the ability to jump back afterwards (ctrl+return when cursor is on function, ctrl+- to jump back)
+* Jump to function/struct definition and jump back afterwards (ctrl+shift+alt+b when cursor is on token, ctrl+- to jump back)
 * More informative File Bar
-* Preview hex color codes that lie under the cursor (when cursor is on any hex color value)
-* Draw guide-lines from scope start to scope end (when within scope)
-* Annotate scope end with scope start (when within scope)
-* Highlight braces at current scope (when within scope)
-* Configurable margin for line number gutter (line_number_margin value in 4coder_raynb.cpp)
+* Automatic line-ending mode switching when saving per platform preference
+* Preview hex colors (when cursor is on any hex color code value)
+* Draw guide-lines from scope start to scope end (when within scope, supports nested scopes)
+* Annotate scope end with scope start (when within scope, supports nested scopes)
+* Highlight braces at current scope (when within scope, only current scope)
+* Configurable margin for line number gutter (line_number_margin value in 4coder_ryanb.cpp)
 * Extend token colorization to structs and functions (second color on defcolor_keyword)
 * Extend token colorization to C++ operators (third color on defcolor_keyword)
 * Extend token colorization to scope annotations (second color on defcolor_comment)
