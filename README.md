@@ -8,7 +8,7 @@ My 4coder customization layer for 4coder 4.1.2+ (Beta)
 Features:
 * Search that supports paste from clipboard, advance with enter or tab, reverse with shift+enter or shift+tab
 * Blinking cursor when in notepad-like mode
-* Jump to function/struct definition and jump back afterwards (ctrl+shift+alt+b when cursor is on token, ctrl+- to jump back)
+* Jump to function/struct definition (ctrl+shift+alt+b when cursor is on token, ctrl+- to jump back)
 * More informative File Bar
 * Automatic line-ending mode switching when saving per platform preference
 * Preview hex colors (when cursor is on any hex color code value)
