@@ -8,8 +8,13 @@
 // struct/function highlight code from: https://github.com/Skytrias/4files
 // hex color preview code from: https://gist.github.com/thevaber/58bb6a1c03ebe56309545f413e898a95
 
-// TODO: features to add...
-// change () scope highlight to match style of my {} highlight
+// TODO(ryanb): task list
+// think about removing the .inl support
+// make TODO and NOTE commands smart enough to skip adding // on lines that already have them
+// integrate default_cpmpiler_bat and default_flags_bat from config into my custom bat
+// integrate draw_comment_highlights into ryanb_paint_tokens
+
+// TODO(ryanb): features to add...
 // better virtual whitespace for ternary operator
 // code folding (ctrol+m+o)
 // rename symbol (f2) --> match only on full word and case (using replace_in_all_buffers, query_replace_identifier)
@@ -17,27 +22,26 @@
 // spawn multiple cursors (ctrl+shift+down/up)
 // function prototype helper
 // type helper
-// cut current scope (ctrl+shift+x)
 // double-click to select token
 
 /////////////////////////////////////////////////////////////////////////////
 // TYPES                                                                   //
 /////////////////////////////////////////////////////////////////////////////
 
-namespace {
-    struct Bookmark {
-        Buffer_ID buffer;
-        View_ID   view;
-        i64       pos;
-    };
-}
+struct Bookmark {
+    Buffer_ID buffer;
+    View_ID   view;
+    i64       pos;
+};
 
 /////////////////////////////////////////////////////////////////////////////
 // CONSTANTS                                                               //
 /////////////////////////////////////////////////////////////////////////////
 
 namespace {
+    static f32 cursor_roundness     = 0.45f; // roundness of cursor highlight, default was 0.45f
     static f32 cursor_thickness     = 3.0f;  // thickness of cursor when in notepad style mode, default was 1.0f
+    static f32 mark_thickness       = 2.0f;  // thickness of the mark in 4coder style mode, default was 2.0f
     static f32 cursor_fade_time     = 0.7f;  // time in seconds it takes to fade the cursor out
     static f32 line_number_margin   = 10.0f; // right-margin width for line number column, default was 2.0f
     static f32 scope_line_thickness = 2.0f;  // thickness of line connecting scope-start to scope-end
@@ -199,32 +203,69 @@ ryanb_string_find_first_non_whitespace(String_Const_u8 str) {
 /////////////////////////////////////////////////////////////////////////////
 
 function void
-ryanb_paint_brace_highlight(Application_Links* app, Buffer_ID buffer, Text_Layout_ID text_layout_id, i64 pos){
-    ProfileScope(app, "ryanb paint brace highlight");
+ryanb_draw_hex_color_preview(Application_Links* app, Buffer_ID buffer, Text_Layout_ID text_layout_id, i64 pos) {
+    ProfileScope(app, "ryanb draw hex color preview");
 
-    b32 is_scope_near = false;
-    Token_Array token_array = get_token_array_from_buffer(app, buffer);
-    if (token_array.tokens != 0) {
-        Token_Iterator_Array it = token_iterator_pos(0, &token_array, pos);
-        Token* token = token_it_read(&it);
-        if(token != 0 && token->kind == TokenBaseKind_ScopeOpen) {
-            pos = token->pos + token->size;
+    Scratch_Block scratch(app);
+
+    Range_i64 range = enclose_pos_alpha_numeric(app, buffer, pos);
+    String_Const_u8 token = push_buffer_range(app, scratch, buffer, range);
+    if (token.size == 10) {
+        if (token.str[0] == '0' && (token.str[1] == 'x' || token.str[1] == 'X')) {
+            b32 is_hex = true;
+            for (u32 i = 0; (i < 8) && is_hex; ++i) {
+                char c = token.str[i + 2];
+                is_hex = ((c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f') || (c >= '0' && c <= '9'));
+            }
+
+            if (is_hex) {
+                String_Const_u8 hex = string_substring(token, Ii64_size(2, 8));
+
+                ARGB_Color hex_color = (u32)string_to_integer(hex, 16);
+                draw_character_block(app, text_layout_id, Ii64_size(range.min, 10), 2.0f, hex_color);
+
+                ARGB_Color textColor = ryanb_calculate_color_brightness(hex_color) < 128 ? 0xFFFFFFFF : 0xFF000000;
+                paint_text_color(app, text_layout_id, range, textColor);
+            }
         }
-        else {
-            if(token_it_dec_all(&it)) {
-                token = token_it_read(&it);
-                if (token->kind == TokenBaseKind_ScopeClose && pos == token->pos + token->size) {
-                    pos = token->pos;
-                }
+    }
+}
+
+function void
+ryanb_draw_scope_highlight(Application_Links* app, Buffer_ID buffer, Text_Layout_ID text_layout_id, Token_Array token_array, i64 pos){
+    ProfileScope(app, "ryanb paint scope highlight");
+
+    Token_Iterator_Array it = token_iterator_pos(0, &token_array, pos);
+    Token* token = token_it_read(&it);
+    if(token != 0 && token->kind == TokenBaseKind_ScopeOpen) {
+        pos = token->pos + token->size;
+    }
+    else {
+        if (token_it_dec_all(&it)) {
+            token = token_it_read(&it);
+            if (token->kind == TokenBaseKind_ScopeClose && pos == token->pos + token->size) {
+                pos = token->pos;
             }
         }
     }
 
     Range_i64 range;
-    if (find_surrounding_nest(app, buffer, pos, FindNest_Scope, &range)) {
 
-        //ARGB_Color color = fcolor_resolve(fcolor_id(defcolor_highlight));
+    // brace scope
+    if (find_surrounding_nest(app, buffer, pos, FindNest_Scope, &range)) {
         ARGB_Color color = finalize_color(defcolor_text_cycle, 0);
+
+        draw_character_block(app, text_layout_id, range.min, 0.0f, color);
+        draw_character_block(app, text_layout_id, (range.max - 1), 0.0f, color);
+
+        color = fcolor_resolve(fcolor_id(defcolor_back));
+        paint_text_color_pos(app, text_layout_id, range.min, color);
+        paint_text_color_pos(app, text_layout_id, (range.max - 1), color);
+    }
+
+    // paren scope
+    if (find_surrounding_nest(app, buffer, pos, FindNest_Paren, &range)) {
+        ARGB_Color color = finalize_color(defcolor_text_cycle, 1);
 
         draw_character_block(app, text_layout_id, range.min, 0.0f, color);
         draw_character_block(app, text_layout_id, (range.max - 1), 0.0f, color);
@@ -236,14 +277,12 @@ ryanb_paint_brace_highlight(Application_Links* app, Buffer_ID buffer, Text_Layou
 }
 
 function void
-ryanb_paint_tokens(Application_Links* app, Buffer_ID buffer, Text_Layout_ID text_layout_id) {
+ryanb_paint_tokens(Application_Links* app, Buffer_ID buffer, Text_Layout_ID text_layout_id, Token_Array array) {
     ProfileScope(app, "ryanb paint tokens");
 
     Scratch_Block scratch(app);
 
     Range_i64 function_name_range = { };
-
-	Token_Array array = get_token_array_from_buffer(app, buffer);
     if (array.tokens != 0) {
         Range_i64 visible_range = text_layout_get_visible_range(app, text_layout_id);
         i64 first = token_index_from_pos(&array, visible_range.first);
@@ -255,6 +294,12 @@ ryanb_paint_tokens(Application_Links* app, Buffer_ID buffer, Text_Layout_ID text
                 break;
             }
 
+            // paint keyword tokens
+            FColor color = ryanb_get_token_color_cpp(*token);
+            ARGB_Color argb = fcolor_resolve(color);
+            paint_text_color(app, text_layout_id, Ii64_size(token->pos, token->size), argb);
+
+            // search function tokens
             switch (token->kind) {
                 case TokenBaseKind_ParentheticalOpen: {
                     // end function token range
@@ -314,12 +359,12 @@ ryanb_paint_tokens(Application_Links* app, Buffer_ID buffer, Text_Layout_ID text
 }
 
 function void
-ryanb_draw_cpp_token_colors(Application_Links *app, Text_Layout_ID text_layout_id, Token_Array *array) {
+ryanb_draw_cpp_token_colors(Application_Links *app, Text_Layout_ID text_layout_id, Token_Array array) {
     ProfileScope(app, "ryanb draw cpp token colors");
 
     Range_i64 visible_range = text_layout_get_visible_range(app, text_layout_id);
-    i64 first_index = token_index_from_pos(array, visible_range.first);
-    Token_Iterator_Array it = token_iterator_index(0, array, first_index);
+    i64 first_index = token_index_from_pos(&array, visible_range.first);
+    Token_Iterator_Array it = token_iterator_index(0, &array, first_index);
     for (;;) {
         Token* token = token_it_read(&it);
         if (token->pos >= visible_range.one_past_last) {
@@ -421,35 +466,6 @@ ryanb_draw_file_bar(Application_Links *app, View_ID view_id, Buffer_ID buffer, F
 }
 
 function void
-ryanb_draw_hex_color_preview(Application_Links* app, Buffer_ID buffer, Text_Layout_ID text_layout_id, i64 pos) {
-    ProfileScope(app, "ryanb draw hex color preview");
-
-    Scratch_Block scratch(app);
-
-    Range_i64 range = enclose_pos_alpha_numeric(app, buffer, pos);
-    String_Const_u8 identifier = push_buffer_range(app, scratch, buffer, range);
-    if (identifier.size == 10) {
-        if (identifier.str[0] == '0' && (identifier.str[1] == 'x' || identifier.str[1] == 'X')) {
-            b32 is_hex = true;
-            for (u32 i = 0; (i < 8) && is_hex; ++i) {
-                char c = identifier.str[i + 2];
-                is_hex = ((c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f') || (c >= '0' && c <= '9'));
-            }
-
-            if (is_hex) {
-                String_Const_u8 hex = string_substring(identifier, Ii64_size(2, 8));
-
-                ARGB_Color hex_color = (u32)string_to_integer(hex, 16);
-                draw_character_block(app, text_layout_id, Ii64_size(range.min, 10), 2.0f, hex_color);
-
-                ARGB_Color textColor = ryanb_calculate_color_brightness(hex_color) < 128 ? 0xFFFFFFFF : 0xFF000000;
-                paint_text_color(app, text_layout_id, range, textColor);
-            }
-        }
-    }
-}
-
-function void
 ryanb_draw_notepad_style_cursor_highlight(Application_Links *app, Frame_Info frame_info, View_ID view_id, b32 is_active_view, Buffer_ID buffer, Text_Layout_ID text_layout_id, f32 roundness) {
     ProfileScope(app, "ryanb draw notepad style cursor highlight");
 
@@ -490,13 +506,10 @@ ryanb_draw_notepad_style_cursor_highlight(Application_Links *app, Frame_Info fra
 }
 
 function void
-ryanb_draw_scope_annotations(Application_Links *app, Buffer_ID buffer, Text_Layout_ID text_layout_id, i64 pos, Rect_f32 rect) {
+ryanb_draw_scope_annotations(Application_Links *app, Buffer_ID buffer, Text_Layout_ID text_layout_id, Face_ID face_id, Face_Metrics metrics, i64 pos, Rect_f32 rect) {
     ProfileScope(app, "ryanb draw scope annotations");
 
     Scratch_Block scratch(app);
-
-    Face_ID faceID = get_face_id(app, buffer);
-    Face_Metrics metrics = get_face_metrics(app, faceID);
 
     Token_Array token_array = get_token_array_from_buffer(app, buffer);
     if (token_array.tokens != 0) {
@@ -540,7 +553,6 @@ ryanb_draw_scope_annotations(Application_Links *app, Buffer_ID buffer, Text_Layo
             }
         }
 
-        //
         if (start_token) {
             ARGB_Color color = finalize_color(defcolor_comment, 1);
 
@@ -564,9 +576,9 @@ ryanb_draw_scope_annotations(Application_Links *app, Buffer_ID buffer, Text_Layo
             Vec2_f32 annotation_position = { rect_end.x0, rect_end.y0 };
 
             annotation_position.x += metrics.space_advance;
-            draw_string(app, faceID, string_u8_litexpr("<<"), annotation_position, color);
+            draw_string(app, face_id, string_u8_litexpr("<<"), annotation_position, color);
             annotation_position.x += (metrics.space_advance * 3);
-            draw_string(app, faceID, annotation, annotation_position, color);
+            draw_string(app, face_id, annotation, annotation_position, color);
 
             // draw scope lines
             Range_i64 visible_range = text_layout_get_visible_range(app, text_layout_id);
@@ -584,18 +596,16 @@ ryanb_draw_scope_annotations(Application_Links *app, Buffer_ID buffer, Text_Layo
 }
 
 function void
-ryanb_render_buffer(Application_Links *app, Frame_Info frame_info, View_ID view_id, Face_ID face_id, Buffer_ID buffer, Text_Layout_ID text_layout_id, Rect_f32 rect) {
+ryanb_render_buffer(Application_Links *app, Frame_Info frame_info, View_ID view_id, b32 is_active_view, Face_ID face_id, Buffer_ID buffer, Text_Layout_ID text_layout_id, Rect_f32 rect) {
     ProfileScope(app, "ryanb render buffer");
 
-    View_ID active_view = get_active_view(app, Access_Always);
-    b32 is_active_view = (active_view == view_id);
     Rect_f32 prev_clip = draw_set_clip(app, rect);
 
     // NOTE(allen): Token colorizing
     Token_Array token_array = get_token_array_from_buffer(app, buffer);
     if (token_array.tokens != 0) {
         //draw_cpp_token_colors(app, text_layout_id, &token_array);
-        ryanb_draw_cpp_token_colors(app, text_layout_id, &token_array);
+        ryanb_paint_tokens(app, buffer, text_layout_id, token_array);
 
         // NOTE(allen): Scan for TODOs and NOTEs
         if (global_config.use_comment_keyword) {
@@ -649,32 +659,30 @@ ryanb_render_buffer(Application_Links *app, Frame_Info frame_info, View_ID view_
         draw_line_highlight(app, text_layout_id, line_number, fcolor_id(defcolor_highlight_cursor_line));
     }
 
-    ryanb_paint_brace_highlight(app, buffer, text_layout_id, cursor_pos);
-    ryanb_paint_tokens(app, buffer, text_layout_id);
+    ryanb_draw_scope_highlight(app, buffer, text_layout_id, token_array, cursor_pos);
     ryanb_draw_hex_color_preview(app, buffer, text_layout_id, cursor_pos);
 
     // NOTE(allen): Cursor shape
     Face_Metrics metrics = get_face_metrics(app, face_id);
-    f32 cursor_roundness = (metrics.normal_advance*0.5f)*0.9f;
-    f32 mark_thickness = 2.f;
+    f32 roundness = (metrics.normal_advance * cursor_roundness);
 
     // NOTE(allen): Cursor
     switch (fcoder_mode) {
         case FCoderMode_Original: {
-            draw_original_4coder_style_cursor_mark_highlight(app, view_id, is_active_view, buffer, text_layout_id, cursor_roundness, mark_thickness);
+            draw_original_4coder_style_cursor_mark_highlight(app, view_id, is_active_view, buffer, text_layout_id, roundness, mark_thickness);
         }
         break;
 
         case FCoderMode_NotepadLike: {
-            //draw_notepad_style_cursor_highlight(app, view_id, buffer, text_layout_id, cursor_roundness);
-            ryanb_draw_notepad_style_cursor_highlight(app, frame_info, view_id, is_active_view, buffer, text_layout_id, cursor_roundness);
+            //draw_notepad_style_cursor_highlight(app, view_id, buffer, text_layout_id, roundness);
+            ryanb_draw_notepad_style_cursor_highlight(app, frame_info, view_id, is_active_view, buffer, text_layout_id, roundness);
         }
         break;
     }
 
     // NOTE(allen): put the actual text on the actual screen
     draw_text_layout_default(app, text_layout_id);
-    ryanb_draw_scope_annotations(app, buffer, text_layout_id, cursor_pos, rect);
+    ryanb_draw_scope_annotations(app, buffer, text_layout_id, face_id, metrics, cursor_pos, rect);
 
     draw_set_clip(app, prev_clip);
 }
@@ -754,7 +762,145 @@ CUSTOM_COMMAND_SIG(ryanb_write_text) {
     view_set_cursor_and_preferred_x(app, view, seek_pos(pos + 1));
 }
 
+CUSTOM_COMMAND_SIG(ryanb_create_build_script) {
+    FILE* bat_script = fopen("build.bat", "wb");
+    if (bat_script != 0) {
+        fprintf(bat_script, "@echo off\n");
+        fprintf(bat_script, "\n");
+
+        fprintf(bat_script, ":options\n");
+        fprintf(bat_script, "set RELEASEBUILD=0\n");
+        fprintf(bat_script, "\n");
+
+        fprintf(bat_script, ":win32\n");
+        fprintf(bat_script, "echo [WINDOWS]\n");
+        fprintf(bat_script, "if %%RELEASEBUILD%% equ 1 echo Release Build\n");
+        fprintf(bat_script, "if %%RELEASEBUILD%% neq 1 echo Internal Build\n");
+        fprintf(bat_script, "echo.\n");
+        fprintf(bat_script, "\n");
+
+        fprintf(bat_script, "where /q cl\n");
+        fprintf(bat_script, "if %%ERRORLEVEL%% equ 0 goto compiler_setup\n");
+        fprintf(bat_script, "\n");
+
+        fprintf(bat_script, ":msvc\n");
+        fprintf(bat_script, "echo [MSVC]\n");
+        fprintf(bat_script, "echo finding vcvarsall.bat...\n");
+        fprintf(bat_script, "set VCVARS=C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Enterprise\\VC\\Auxiliary\\Build\\vcvarsall.bat\n");
+        fprintf(bat_script, "if exist \"%%VCVARS%%\" goto vc_vars_found\n");
+        fprintf(bat_script, "set VCVARS=C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Professional\\VC\\Auxiliary\\Build\\vcvarsall.bat\n");
+        fprintf(bat_script, "if exist \"%%VCVARS%%\" goto vc_vars_found\n");
+        fprintf(bat_script, "set VCVARS=C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\\Auxiliary\\Build\\vcvarsall.bat\n");
+        fprintf(bat_script, "if exist \"%%VCVARS%%\" goto vc_vars_found\n");
+        fprintf(bat_script, "set VCVARS=C:\\Program Files (x86)\\Microsoft Visual Studio\\2017\\Enterprise\\VC\\Auxiliary\\Build\\vcvarsall.bat\n");
+        fprintf(bat_script, "if exist \"%%VCVARS%%\" goto vc_vars_found\n");
+        fprintf(bat_script, "set VCVARS=C:\\Program Files (x86)\\Microsoft Visual Studio\\2017\\Professional\\VC\\Auxiliary\\Build\\vcvarsall.bat\n");
+        fprintf(bat_script, "if exist \"%%VCVARS%%\" goto vc_vars_found\n");
+        fprintf(bat_script, "set VCVARS=C:\\Program Files (x86)\\Microsoft Visual Studio\\2017\\Community\\VC\\Auxiliary\\Build\\vcvarsall.bat\n");
+        fprintf(bat_script, "if exist \"%%VCVARS%%\" goto vc_vars_found\n");
+        fprintf(bat_script, "\n");
+
+        fprintf(bat_script, "echo unable to find vcvarsall.bat\n");
+        fprintf(bat_script, "goto error\n");
+        fprintf(bat_script, "\n");
+
+        fprintf(bat_script, ":vc_vars_found\n");
+        fprintf(bat_script, "echo found vcvarsall.bat: \"%%VCVARS%%\"\n");
+        fprintf(bat_script, "call \"%%VCVARS%%\" x64 > NUL\n");
+        fprintf(bat_script, "echo.\n");
+        fprintf(bat_script, "\n");
+
+        fprintf(bat_script, ":compiler_setup\n");
+        fprintf(bat_script, "set COMPILERFLAGS=/diagnostics:column /EHa- /FC /fp:except- /fp:fast /Gm- /GR- /GS- /Gs9999999 /nologo /W4 /WX /Z7 /Zo\n");
+        fprintf(bat_script, "if %%RELEASEBUILD%% equ 0 (\n");
+        fprintf(bat_script, "    set COMPILERFLAGSEXE=%%CompilerFlags%% /MTd /Od /DINTERNAL_BUILD\n");
+        fprintf(bat_script, "    set COMPILERFLAGSDLL=%%CompilerFlags%% /LDd /Od /DINTERNAL_BUILD\n");
+        fprintf(bat_script, ")\n");
+        fprintf(bat_script, "if %%RELEASEBUILD%% equ 1 (\n");
+        fprintf(bat_script, "    set COMPILERFLAGSEXE=%%COMPILERFLAGS%% /MT /Oi /O2 /DRELEASE_BUILD\n");
+        fprintf(bat_script, "    set COMPILERFLAGSDLL=%%COMPILERFLAGS%% /LD /Oi /O2 /DRELEASE_BUILD\n");
+        fprintf(bat_script, ")\n");
+        fprintf(bat_script, "\n");
+
+        fprintf(bat_script, ":linker_setup\n");
+        fprintf(bat_script, "set LINKERFLAGS=/INCREMENTAL:NO /MAP /NODEFAULTLIB /OPT:REF /STACK:0x100000,0x100000\n");
+        fprintf(bat_script, "set LINKERFLAGSEXE=%%LINKERFLAGS%% /PDB:platform_win32.pdb /ENTRY:main /SUBSYSTEM:WINDOWS\n");
+        fprintf(bat_script, "set LINKERFLAGSDLL=%%LINKERFLAGS%% /PDB:game_%%random%%.pdb /NOENTRY -EXPORT:update\n");
+        fprintf(bat_script, "\n");
+
+        fprintf(bat_script, "if not exist \"..\\bin\\win32\" mkdir \"..\\bin\\win32\"\n");
+        fprintf(bat_script, "pushd \"..\\bin\\win32\"\n");
+        fprintf(bat_script, "\n");
+
+        fprintf(bat_script, "del *.exp 2> NUL\n");
+        fprintf(bat_script, "del *.lib 2> NUL\n");
+        fprintf(bat_script, "del *.map 2> NUL\n");
+        fprintf(bat_script, "del *.o   2> NUL\n");
+        fprintf(bat_script, "del *.obj 2> NUL\n");
+        fprintf(bat_script, "del *.pdb 2> NUL\n");
+        fprintf(bat_script, "\n");
+
+        fprintf(bat_script, "echo.\n");
+        fprintf(bat_script, "echo building game dll...\n");
+        fprintf(bat_script, "cl %%COMPILERFLAGSDLL%% /EP /C \"..\\..\\src\\game.cpp\" > expanded_game.cpp\n");
+        fprintf(bat_script, "cl %%COMPILERFLAGSDLL%% \"..\\..\\src\\game.cpp\" /link /PDB:game_%%random%%.pdb %%LINKERFLAGSDLL%%\n");
+        fprintf(bat_script, "if %%ERRORLEVEL%% neq 0 goto error\n");
+        fprintf(bat_script, "\n");
+
+        fprintf(bat_script, "echo.\n");
+        fprintf(bat_script, "echo building game exe...\n");
+        fprintf(bat_script, "cl %%COMPILERFLAGSEXE%% /EP /C \"..\\..\\src\\platform_win32.cpp\" > expanded_platform_win32.cpp\n");
+        fprintf(bat_script, "cl %%COMPILERFLAGSEXE%% \"..\\..\\src\\platform_win32.cpp\" /link /PDB:platform_win32.pdb %%LINKERFLAGSEXE%% kernel32.lib\n");
+        fprintf(bat_script, "if %%ERRORLEVEL%% neq 0 goto error\n");
+        fprintf(bat_script, "\n");
+
+        fprintf(bat_script, "del *.exp 2> NUL\n");
+        fprintf(bat_script, "del *.lib 2> NUL\n");
+        fprintf(bat_script, "del *.o   2> NUL\n");
+        fprintf(bat_script, "del *.obj 2> NUL\n");
+        fprintf(bat_script, "\n");
+
+        fprintf(bat_script, ":end\n");
+        fprintf(bat_script, "echo.\n");
+        fprintf(bat_script, "echo build complete!\n");
+        fprintf(bat_script, "popd\n");
+        fprintf(bat_script, "exit /b 0\n");
+        fprintf(bat_script, "\n");
+
+        fprintf(bat_script, ":error\n");
+        fprintf(bat_script, "echo.\n");
+        fprintf(bat_script, "echo build error, quitting...\n");
+        fprintf(bat_script, "popd\n");
+        fprintf(bat_script, "exit /b 1\n");
+        fprintf(bat_script, "\n");
+
+        fclose(bat_script);
+    }
+}
+
 // hotkeys
+CUSTOM_COMMAND_SIG(ryanb_command_lister) {
+    View_ID view = get_this_ctx_view(app, Access_Always);
+    if (view == 0) return;
+
+    Scratch_Block scratch(app, Scratch_Share);
+
+    Lister* lister = begin_lister(app, scratch);
+    lister_set_query(lister, string_u8_litexpr("Command:"));
+    lister->handlers = lister_get_default_handlers();
+
+    lister_add_item(lister, string_u8_litexpr("create build script"), string_u8_litexpr(""), (void*)ryanb_create_build_script, 0);
+
+    Lister_Result result = run_lister(app, lister);
+
+    if (!result.canceled) {
+        Custom_Command_Function* command = (Custom_Command_Function*)(result.user_data);
+        if (command != 0) {
+            view_enqueue_command_function(app, view, command);
+        }
+    }
+}
+
 CUSTOM_COMMAND_SIG(ryanb_duplicate_line) {
     duplicate_line(app);
     move_down(app);
@@ -991,7 +1137,7 @@ void ryanb_render_caller(Application_Links* app, Frame_Info frame_info, View_ID 
 
     // NOTE(allen): draw the buffer
     //default_render_buffer(app, view_id, face_id, buffer, text_layout_id, region);
-    ryanb_render_buffer(app, frame_info, view_id, face_id, buffer, text_layout_id, region);
+    ryanb_render_buffer(app, frame_info, view_id, is_active_view, face_id, buffer, text_layout_id, region);
 
     text_layout_free(app, text_layout_id);
     draw_set_clip(app, prev_clip);
@@ -1015,6 +1161,7 @@ void ryanb_setup_default_mapping(Mapping* mapping, i64 global_id, i64 file_id, i
 
     Bind(exit_4coder,                     KeyCode_F4,      KeyCode_Alt);                                // alt  + f4              : close 4coder
     Bind(toggle_fullscreen,               KeyCode_F11);                                                 // f11                    : toggle full screen
+    Bind(ryanb_command_lister,            KeyCode_F12);                                                 // f12                    : open custom command lister
     Bind(close_build_footer_panel,        KeyCode_Escape);                                              // esc                    : close open build panel
     Bind(change_active_panel,             KeyCode_Comma,  KeyCode_Control);                             // ctrl + ,               : switch active panel
     Bind(swap_panels,                     KeyCode_Comma,  KeyCode_Control, KeyCode_Shift);              // ctrl + shift + ,       : swap panels
@@ -1091,7 +1238,6 @@ void ryanb_setup_default_mapping(Mapping* mapping, i64 global_id, i64 file_id, i
     Bind(ryanb_rename_identifier,         KeyCode_F2);                            // F2           : rename identifier in all open buffers
     Bind(ryanb_move_left_token_boundary,  KeyCode_Left,         KeyCode_Control); // ctrl + left  : seek token left
     Bind(ryanb_move_right_token_boundary, KeyCode_Right,        KeyCode_Control); // ctrl + right : seek token right
-
     Bind(word_complete,                   KeyCode_Tab);                           // tab          : auto-complete current word
     Bind(comment_line_toggle,             KeyCode_ForwardSlash, KeyCode_Alt);     // alt  + /     : toggle line comment
     Bind(ryanb_goto_function,             KeyCode_Return,       KeyCode_Control); // ctrl + enter : bookmark current position and go to function declaration for function under cursor
