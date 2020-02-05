@@ -9,7 +9,7 @@ Features:
 * Search that supports paste from clipboard, advance with enter or tab, reverse with shift+enter or shift+tab
 * Blinking cursor when in notepad-like mode
 * Jump to function/struct definition (ctrl+shift+alt+b when cursor is on token, ctrl+- to jump back)
-* More informative File Bar
+* More informative File Bar (buffer language type and line-ending type, eventually encoding type)
 * Automatic line-ending mode switching when saving per platform preference
 * Preview hex colors (when cursor is on any hex color code value)
 * Draw guide-lines from scope start to scope end (when within scope, supports nested scopes)
