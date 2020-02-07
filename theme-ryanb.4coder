@@ -8,13 +8,13 @@ defcolor_pop2 = 0xFF43BA82;
 defcolor_text_default = 0xFFBBBBBB;
 defcolor_at_highlight = defcolor_back;
 
-defcolor_margin = 0xFFFF0000;
-defcolor_margin_hover = 0xFFFF0000;
-defcolor_margin_active = 0xFFFF0000;
+defcolor_margin = defcolor_back;
+defcolor_margin_hover = 0xFF545255;
+defcolor_margin_active = defcolor_bar;
 
 defcolor_list_item = defcolor_back;
 defcolor_list_item_hover = 0xFF545255;
-defcolor_list_item_active = defcolor_bar;
+defcolor_list_item_active = 0xFF444245;
 
 defcolor_cursor = defcolor_text_default;
 defcolor_at_cursor = defcolor_back;
