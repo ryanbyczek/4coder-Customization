@@ -10,7 +10,6 @@
 
 // TODO(ryanb): features to add...
 // expand bookmarking system to auto-record location history
-// update search-all with my search customizations
 // resume state when opening 4coder (open documents, panels, cursor pos, etc)
 // better virtual whitespace for ternary operator
 // code folding (ctrol+m+o)
@@ -1008,6 +1007,86 @@ CUSTOM_COMMAND_SIG(ryanb_kill_to_end_of_line) {
     current_view_boundary_delete(app, Scan_Forward, push_boundary_list(scratch, boundary_line));
 }
 
+CUSTOM_COMMAND_SIG(ryanb_list_all_locations) {
+    Scratch_Block scratch(app);
+    
+    View_ID view = get_active_view(app, Access_ReadVisible);
+    Buffer_ID buffer = view_get_buffer(app, view, Access_ReadVisible);
+    i64 buffer_size = buffer_get_size(app, buffer);
+    
+    // get token under cursor
+    i64 pos_origin = view_get_cursor_pos(app, view);
+    Range_i64 range = enclose_pos_alpha_numeric_underscore(app, buffer, pos_origin);
+    String_Const_u8 query_init = push_buffer_range(app, scratch, buffer, range);
+
+    Query_Bar_Group group(app);
+    Query_Bar bar = {};
+    if (start_query_bar(app, &bar, 0) == 0) {
+        return;
+    }
+
+    u8 bar_string_space[256];
+    bar.string = SCu8(bar_string_space, query_init.size);
+    block_copy(bar.string.str, query_init.str, query_init.size);
+    bar.prompt = string_u8_litexpr("Search All: ");
+
+    b32 do_list = false;
+    User_Input in = { };
+    for (;;) {
+        in = get_next_input(app, EventPropertyGroup_AnyKeyboardEvent, EventProperty_Escape|EventProperty_ViewActivation);
+        if (in.abort) {
+            break;
+        }
+        if (match_key_code(&in, KeyCode_Return)) {
+            do_list = true;
+            break;
+        }
+
+        // allow paste
+        b32 did_paste = false;
+        if (match_key_code(&in, KeyCode_V)) {
+            Input_Modifier_Set* mods = &in.event.key.modifiers;
+            if (has_modifier(mods, KeyCode_Control)) {
+                did_paste = true;
+                String_Const_u8 paste = push_clipboard_index(app, scratch, 0, 0);
+                if (paste.size > 0) {
+                    bar.string.size = 0;
+                    String_u8 bar_string = Su8(bar.string, sizeof(bar_string_space));
+                    string_append(&bar_string, paste);
+                    bar.string = bar_string.string;
+                }
+            }
+        }
+
+        if (!did_paste) {
+            String_Const_u8 string = to_writable(&in);
+            if (string.str != 0 && string.size > 0) {
+                String_u8 bar_string = Su8(bar.string, sizeof(bar_string_space));
+                string_append(&bar_string, string);
+                bar.string = bar_string.string;
+            }
+            else if (match_key_code(&in, KeyCode_Backspace)){
+                if (is_unmodified_key(&in.event)) {
+                    u64 old_bar_string_size = bar.string.size;
+                    bar.string = backspace_utf8(bar.string);
+                }
+                else if (has_modifier(&in.event.key.modifiers, KeyCode_Control)) {
+                    if (bar.string.size > 0){
+                        bar.string.size = 0;
+                    }
+                }
+            }
+            else {
+                leave_current_input_unhandled(app);
+            }
+        }
+    }
+
+    if (do_list) {
+        list_all_locations__generic(app, bar.string, ListAllLocationsFlag_CaseSensitive);
+    }
+}
+
 CUSTOM_COMMAND_SIG(ryanb_move_down_to_blank_line) {
     move_down_to_blank_line(app);
     center_view(app);
@@ -1097,7 +1176,7 @@ CUSTOM_COMMAND_SIG(ryanb_search) {
     
     Query_Bar_Group group(app);
     Query_Bar bar = {};
-    if (start_query_bar(app, &bar, 0) == 0){
+    if (start_query_bar(app, &bar, 0) == 0) {
         return;
     }
     
@@ -1108,9 +1187,6 @@ CUSTOM_COMMAND_SIG(ryanb_search) {
     bar.string = SCu8(bar_string_space, query_init.size);
     block_copy(bar.string.str, query_init.str, query_init.size);
     bar.prompt = string_u8_litexpr("Search: ");
-    
-    String_Const_u8 isearch_str = string_u8_litexpr("Search: ");
-    String_Const_u8 rsearch_str = string_u8_litexpr("Reverse-Search: ");
     
     u64 match_size = bar.string.size;
     
@@ -1484,7 +1560,7 @@ void setup_ryanb_mapping(Mapping* mapping, i64 global_id, i64 file_id, i64 code_
     Bind(copy,                            KeyCode_C,      KeyCode_Control);                // ctrl + c         : copy selection
     Bind(ryanb_duplicate_line,            KeyCode_D,      KeyCode_Control);                // ctrl + d         : duplicate line and move down
     Bind(ryanb_search,                    KeyCode_F,      KeyCode_Control);                // ctrl + f         : find in current buffer
-    Bind(list_all_locations,              KeyCode_F,      KeyCode_Control, KeyCode_Shift); // ctrl + shift + f : find in every buffer
+    Bind(ryanb_list_all_locations,        KeyCode_F,      KeyCode_Control, KeyCode_Shift); // ctrl + shift + f : find in every buffer
     Bind(ryanb_goto_line,                 KeyCode_G,      KeyCode_Control);                // ctrl + g         : go to line dialog and center view
     Bind(query_replace,                   KeyCode_H,      KeyCode_Control);                // ctrl + h         : find and replace prompt
     Bind(query_replace_identifier,        KeyCode_H,      KeyCode_Control, KeyCode_Shift); // ctrl + shift + h : find and replace prompt, with current identifier autopopulated as find
