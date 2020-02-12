@@ -650,9 +650,8 @@ CUSTOM_COMMAND_SIG(ryanb_list_all_locations) {
     Buffer_ID buffer = view_get_buffer(app, view, Access_ReadVisible);
     i64 buffer_size = buffer_get_size(app, buffer);
 
-    // get token under cursor
-    i64 pos_origin = view_get_cursor_pos(app, view);
-    Range_i64 range = enclose_pos_alpha_numeric_underscore(app, buffer, pos_origin);
+    i64 pos = view_get_cursor_pos(app, view);
+    Range_i64 range = enclose_pos_alpha_numeric_underscore(app, buffer, pos);
     String_Const_u8 query_init = push_buffer_range(app, scratch, buffer, range);
 
     Query_Bar_Group group(app);
@@ -666,7 +665,9 @@ CUSTOM_COMMAND_SIG(ryanb_list_all_locations) {
     block_copy(bar.string.str, query_init.str, query_init.size);
     bar.prompt = string_u8_litexpr("Search All: ");
 
+    b32 do_clear_query = true;
     b32 do_list = false;
+
     User_Input in = { };
     for (;;) {
         in = get_next_input(app, EventPropertyGroup_AnyKeyboardEvent, EventProperty_Escape|EventProperty_ViewActivation);
@@ -697,12 +698,24 @@ CUSTOM_COMMAND_SIG(ryanb_list_all_locations) {
         if (!did_paste) {
             String_Const_u8 string = to_writable(&in);
             if (string.str != 0 && string.size > 0) {
+                if (do_clear_query) {
+                    do_clear_query = false;
+                    if (bar.string.size > 0){
+                        bar.string.size = 0;
+                    }
+                }
                 String_u8 bar_string = Su8(bar.string, sizeof(bar_string_space));
                 string_append(&bar_string, string);
                 bar.string = bar_string.string;
             }
-            else if (match_key_code(&in, KeyCode_Backspace)){
-                if (is_unmodified_key(&in.event)) {
+            else if (match_key_code(&in, KeyCode_Backspace)) {
+                if (do_clear_query) {
+                    do_clear_query = false;
+                    if (bar.string.size > 0){
+                        bar.string.size = 0;
+                    }
+                }
+                else if (is_unmodified_key(&in.event)) {
                     u64 old_bar_string_size = bar.string.size;
                     bar.string = backspace_utf8(bar.string);
                 }
@@ -805,9 +818,11 @@ CUSTOM_COMMAND_SIG(ryanb_search) {
     Buffer_ID buffer = view_get_buffer(app, view, Access_ReadVisible);
     i64 buffer_size = buffer_get_size(app, buffer);
 
-    i64 pos_origin = view_get_cursor_pos(app, view);
-    Range_i64 range = enclose_pos_alpha_numeric_underscore(app, buffer, pos_origin);
+    i64 pos = view_get_cursor_pos(app, view);
+    Range_i64 range = enclose_pos_alpha_numeric_underscore(app, buffer, pos);
     String_Const_u8 query_init = push_buffer_range(app, scratch, buffer, range);
+
+    Scan_Direction scan = Scan_Forward;
 
     Query_Bar_Group group(app);
     Query_Bar bar = {};
@@ -815,14 +830,12 @@ CUSTOM_COMMAND_SIG(ryanb_search) {
         return;
     }
 
-    Scan_Direction scan = Scan_Forward;
-    i64 pos = pos_origin;
-
     u8 bar_string_space[256];
     bar.string = SCu8(bar_string_space, query_init.size);
     block_copy(bar.string.str, query_init.str, query_init.size);
     bar.prompt = string_u8_litexpr("Search: ");
 
+    b32 do_clear_query = true;
     u64 match_size = bar.string.size;
 
     User_Input in = { };
@@ -855,13 +868,27 @@ CUSTOM_COMMAND_SIG(ryanb_search) {
         }
 
         if (string.str != 0 && string.size > 0) {
+            if (do_clear_query) {
+                do_clear_query = false;
+                if (bar.string.size > 0) {
+                    bar.string.size = 0;
+                    string_change = true;
+                }
+            }
             String_u8 bar_string = Su8(bar.string, sizeof(bar_string_space));
             string_append(&bar_string, string);
             bar.string = bar_string.string;
             string_change = true;
         }
-        else if (match_key_code(&in, KeyCode_Backspace)){
-            if (is_unmodified_key(&in.event)) {
+        else if (match_key_code(&in, KeyCode_Backspace)) {
+            if (do_clear_query) {
+                do_clear_query = false;
+                if (bar.string.size > 0) {
+                    bar.string.size = 0;
+                    string_change = true;
+                }
+            }
+            else if (is_unmodified_key(&in.event)) {
                 u64 old_bar_string_size = bar.string.size;
                 bar.string = backspace_utf8(bar.string);
                 string_change = (bar.string.size < old_bar_string_size);
