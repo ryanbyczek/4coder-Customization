@@ -5,6 +5,8 @@ My 4coder customization layer for 4coder 4.1.2+ (Beta)
 * theme-ryanb.4coder (optional) goes in: 4coder\themes
 * config.4coder (optional) goes in: 4coder\
 
+Many settings can be adjusted under the CONSTANTS section near the top of 4coder_ryanb.cpp
+
 Features:
 * Bookmark cursor position when idle every 3 seconds, or manually with ctrl+shift+alt+b
 * Advance through bookmarks with ctrl++ or ctrl+-
