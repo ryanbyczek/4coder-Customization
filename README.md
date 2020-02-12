@@ -6,20 +6,23 @@ My 4coder customization layer for 4coder 4.1.2+ (Beta)
 * config.4coder (optional) goes in: 4coder\
 
 Features:
-* Search that supports paste from clipboard, advance with enter or tab, reverse with shift+enter or shift+tab
-* List All Locations that supports paste from clipboard
+* Bookmark cursor position when idle every 3 seconds, or manually with ctrl+shift+alt+b
+* Advance through bookmarks with ctrl++ or ctrl+-
+* Search initializes with token under cursor, supports paste from clipboard
+* Search advances with enter or tab, reverse with shift+enter or shift+tab
+* List All Locations initializes with token under cursor, supports paste from clipboard
 * Blinking cursor when in notepad-like mode
-* Jump to function/struct definition (ctrl+shift+alt+b when cursor is on token, ctrl+- to jump back)
-* More informative File Bar (language and line-ending type, sapces/tabs, eventually encoding type)
+* Jump to function/struct definition with ctrl+enter when cursor is on token
+* More informative File Bar with language, line-ending, spaces/tabs (eventually encoding type)
 * Automatic line-ending mode switching when saving per platform preference
-* Preview hex colors (when cursor is on any hex color code value)
-* Draw guide-lines from scope start to scope end (when within scope, supports nested scopes)
-* Annotate scope end with scope start (when within scope, supports nested scopes)
-* Highlight braces at current scope (when within scope, only current scope)
+* Preview hex colors when cursor is on any hex color code value
+* Draw guide-lines from scope start to scope end when within scope (supports nested scopes)
+* Annotate scope end with scope start when within scope (supports nested scopes)
+* Highlight braces at current scope when within scope (only current scope)
 * Configurable margin for line number gutter (line_number_margin value in 4coder_ryanb.cpp)
-* Extend token colorization to structs and functions (second color on defcolor_keyword)
-* Extend token colorization to C++ operators (third color on defcolor_keyword)
-* Extend token colorization to scope annotations (second color on defcolor_comment)
+* Extend token colorization to structs and functions (second color on defcolor_keyword in theme)
+* Extend token colorization to C++ operators (third color on defcolor_keyword in theme)
+* Extend token colorization to scope annotations (second color on defcolor_comment in theme)
 
 Includes heavily customized versions of code from the following:
 * scope lines, brace highlights, scope annotation and .bat file from https://github.com/ryanfleury/4coder_fleury
