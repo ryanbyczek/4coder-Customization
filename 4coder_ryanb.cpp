@@ -9,8 +9,7 @@
 // hex color preview code from: https://gist.github.com/thevaber/58bb6a1c03ebe56309545f413e898a95
 
 // TODO(ryanb): features to add...
-// think about reducing ryanb_file_save 
-// expand bookmarking system to auto-record location history
+// think about reducing ryanb_file_save
 // resume state when opening 4coder (open documents, panels, cursor pos, etc)
 // better virtual whitespace for ternary operator
 // code folding (ctrol+m+o)
@@ -29,19 +28,23 @@ struct Bookmark {
     Buffer_ID buffer;
     View_ID   view;
     i64       pos;
+    b32       is_valid;
 };
 
 /////////////////////////////////////////////////////////////////////////////
 // CONSTANTS                                                               //
 /////////////////////////////////////////////////////////////////////////////
 
+#define RYANB_BOOKMARK_COUNT (256)
+
 namespace {
-    static f32 cursor_roundness     = 0.45f; // roundness of cursor highlight, default was 0.45f
-    static f32 cursor_thickness     = 3.0f;  // thickness of cursor when in notepad style mode, default was 1.0f
-    static f32 mark_thickness       = 2.0f;  // thickness of the mark in 4coder style mode, default was 2.0f
-    static f32 cursor_fade_time     = 0.7f;  // time in seconds it takes to fade the cursor out
-    static f32 line_number_margin   = 10.0f; // right-margin width for line number column, default was 2.0f
-    static f32 scope_line_thickness = 2.0f;  // thickness of line connecting scope-start to scope-end
+    static const f32 auto_bookmark_seconds = 3.0f;  // number of seconds to wait until bookmarking the cursor position when the cursor isn't moving, default was 3.0f
+    static const f32 cursor_roundness      = 0.45f; // roundness of cursor highlight, default was 0.45f
+    static const f32 cursor_thickness      = 3.0f;  // thickness of cursor when in notepad style mode, default was 1.0f
+    static const f32 mark_thickness        = 2.0f;  // thickness of the mark in 4coder style mode, default was 2.0f
+    static const f32 cursor_fade_time      = 0.7f;  // time in seconds it takes to fade the cursor out
+    static const f32 line_number_margin    = 10.0f; // right-margin width for line number column, default was 2.0f
+    static const f32 scope_line_thickness  = 2.0f;  // thickness of line connecting scope-start to scope-end
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -49,7 +52,9 @@ namespace {
 /////////////////////////////////////////////////////////////////////////////
 
 namespace {
-    Bookmark global_bookmark;
+    f32 auto_bookmark_time_remaining = auto_bookmark_seconds;
+    i64 bookmark_cursor = 0;
+    Bookmark bookmarks[RYANB_BOOKMARK_COUNT] = { };
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -57,12 +62,29 @@ namespace {
 /////////////////////////////////////////////////////////////////////////////
 
 function void
-ryanb_bookmark_location(Application_Links* app) {
-    View_ID view = get_active_view(app, Access_ReadVisible);
+ryanb_bookmark_cursor_inc(void) {
+    bookmark_cursor++;
+    if (bookmark_cursor >= RYANB_BOOKMARK_COUNT) {
+        bookmark_cursor = 0;
+    }
+}
+function void
+ryanb_bookmark_cursor_dec(void) {
+    bookmark_cursor--;
+    if (bookmark_cursor < 0) {
+        bookmark_cursor = RYANB_BOOKMARK_COUNT - 1;
+    }
+}
 
-    global_bookmark.view = view;
-    global_bookmark.buffer = view_get_buffer(app, view, Access_ReadVisible);
-    global_bookmark.pos = view_get_cursor_pos(app, view);
+function b32
+ryanb_is_cursor_at_bookmark(Application_Links* app) {
+    View_ID view = get_active_view(app, Access_ReadVisible);
+    Buffer_ID buffer = view_get_buffer(app, view, Access_ReadVisible);
+    i64 pos = view_get_cursor_pos(app, view);
+
+    Bookmark* bookmark = &bookmarks[bookmark_cursor];
+
+    return (bookmark->is_valid && bookmark->view == view && bookmark->buffer == buffer && bookmark->pos == pos);
 }
 
 function u32
@@ -193,6 +215,735 @@ ryanb_string_find_first_non_whitespace(String_Const_u8 str) {
     u64 i = 0;
     for (i; i < str.size && str.str[i] <= 32; ++i);
     return (i);
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// CUSTOM COMMANDS                                                         //
+/////////////////////////////////////////////////////////////////////////////
+
+// hooks
+BUFFER_HOOK_SIG(ryanb_file_save) {
+    ProfileScope(app, "ryanb file save");
+    b32 is_virtual = global_config.enable_virtual_whitespace;
+    if (global_config.automatically_indent_text_on_save && is_virtual){
+        auto_indent_buffer(app, buffer_id, buffer_range(app, buffer_id));
+    }
+
+    clean_all_lines(app);
+
+#if OS_WINDOWS
+    {
+        rewrite_lines_to_crlf(app, buffer_id);
+        set_eol_mode_to_crlf(app);
+    }
+#elif (OS_LINUX || OS_MAC)
+    {
+        rewrite_lines_to_lf(app, buffer_id);
+        set_eol_mode_to_lf(app);
+    }
+#endif
+
+    return (0);
+}
+
+BUFFER_HOOK_SIG(ryanb_new_file){
+    Scratch_Block scratch(app);
+    String_Const_u8 file_name = push_buffer_base_name(app, scratch, buffer_id);
+
+    // skip non .h files
+    if (!string_match(string_postfix(file_name, 2), string_u8_litexpr(".h"))) {
+        return (0);
+    }
+
+    // convert file_name to header guard string
+    String_Const_u8 guard = push_string_copy(scratch, file_name);
+    for (u64 i = 0; i < guard.size; ++i){
+        // lower to upper
+        if (guard.str[i] >= 'a' && guard.str[i] <= 'z') {
+            guard.str[i] -= ('a' - 'A');
+        }
+        // change . to _
+        else if (guard.str[i] == '.') {
+            guard.str[i] = '_';
+        }
+    }
+
+    // insert header guards
+    Buffer_Insertion insert = begin_buffer_insertion_at_buffered(app, buffer_id, 0, scratch, KB(16));
+    insertf(&insert,
+            "#ifndef %.*s\n"
+            "#define %.*s\n"
+            "\n"
+            "#endif // %.*s\n",
+            string_expand(guard),
+            string_expand(guard),
+            string_expand(guard));
+    end_buffer_insertion(&insert);
+
+    return (0);
+}
+
+// events
+CUSTOM_COMMAND_SIG(ryanb_startup) {
+    ProfileScope(app, "ryanb startup");
+    User_Input input = get_current_input(app);
+    if (match_core_code(&input, CoreCode_Startup)){
+        String_Const_u8_Array file_names = input.event.core.file_names;
+        load_themes_default_folder(app);
+        default_4coder_initialize(app, file_names);
+        default_4coder_side_by_side_panels(app, file_names);
+        if (global_config.automatically_load_project){
+            load_project(app);
+        }
+    }
+
+    system_set_fullscreen(true);
+}
+
+CUSTOM_COMMAND_SIG(ryanb_write_text) {
+    View_ID view = get_active_view(app, Access_ReadWriteVisible);
+    Buffer_ID buffer = view_get_buffer(app, view, Access_ReadWriteVisible);
+
+    // skip when in comments
+    i64 start = get_start_of_line_at_cursor(app, view, buffer);
+    if (c_line_comment_starts_at_position(app, buffer, start)) {
+        write_text_input(app);
+        return;
+    }
+
+    i64 pos = view_get_cursor_pos(app, view);
+
+    User_Input in = get_current_input(app);
+    String_Const_u8 insert = to_writable(&in);
+
+    b32 is_quote = false;
+    b32 is_closing_brace = false;
+    if (insert.str != 0 && insert.size > 0) {
+        switch (insert.str[0]) {
+            case '{': {
+                write_string(app, string_u8_litexpr("{}"));
+            }
+            break;
+
+            case '(': {
+                write_string(app, string_u8_litexpr("()"));
+            }
+            break;
+
+            case '[': {
+                write_string(app, string_u8_litexpr("[]"));
+            }
+            break;
+
+            case '}':
+            case ')':
+            case ']': {
+                is_closing_brace = true;
+            }
+            break;
+
+            case '\'':
+            case '\"': {
+                is_quote = true;
+            }
+            break;
+
+            default: {
+                write_text_input(app);
+                return;
+            }
+        }
+    }
+
+    if (is_closing_brace || is_quote) {
+        u8 next_character = 0;
+        buffer_read_range(app, buffer, Ii64(pos, pos + 1), &next_character);
+
+        if (insert.str[0] != next_character) {
+            write_string(app, SCu8(insert.str, 1));
+            if (is_quote) {
+                write_string(app, SCu8(insert.str, 1));
+            }
+        }
+    }
+
+    view_set_cursor_and_preferred_x(app, view, seek_pos(pos + 1));
+}
+
+CUSTOM_COMMAND_SIG(ryanb_create_build_script) {
+    FILE* bat_script = fopen("build.bat", "wb");
+    if (bat_script != 0) {
+        fprintf(bat_script, "@echo off\n");
+        fprintf(bat_script, "\n");
+
+        fprintf(bat_script, ":options\n");
+        fprintf(bat_script, "set RELEASEBUILD=0\n");
+        fprintf(bat_script, "\n");
+
+        fprintf(bat_script, ":win32\n");
+        fprintf(bat_script, "echo [WINDOWS]\n");
+        fprintf(bat_script, "if %%RELEASEBUILD%% equ 1 echo Release Build\n");
+        fprintf(bat_script, "if %%RELEASEBUILD%% neq 1 echo Internal Build\n");
+        fprintf(bat_script, "echo.\n");
+        fprintf(bat_script, "\n");
+
+        fprintf(bat_script, "where /q cl\n");
+        fprintf(bat_script, "if %%ERRORLEVEL%% equ 0 goto compiler_setup\n");
+        fprintf(bat_script, "\n");
+
+        fprintf(bat_script, ":msvc\n");
+        fprintf(bat_script, "echo [MSVC]\n");
+        fprintf(bat_script, "echo finding vcvarsall.bat...\n");
+        fprintf(bat_script, "set VCVARS=C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Enterprise\\VC\\Auxiliary\\Build\\vcvarsall.bat\n");
+        fprintf(bat_script, "if exist \"%%VCVARS%%\" goto vc_vars_found\n");
+        fprintf(bat_script, "set VCVARS=C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Professional\\VC\\Auxiliary\\Build\\vcvarsall.bat\n");
+        fprintf(bat_script, "if exist \"%%VCVARS%%\" goto vc_vars_found\n");
+        fprintf(bat_script, "set VCVARS=C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\\Auxiliary\\Build\\vcvarsall.bat\n");
+        fprintf(bat_script, "if exist \"%%VCVARS%%\" goto vc_vars_found\n");
+        fprintf(bat_script, "set VCVARS=C:\\Program Files (x86)\\Microsoft Visual Studio\\2017\\Enterprise\\VC\\Auxiliary\\Build\\vcvarsall.bat\n");
+        fprintf(bat_script, "if exist \"%%VCVARS%%\" goto vc_vars_found\n");
+        fprintf(bat_script, "set VCVARS=C:\\Program Files (x86)\\Microsoft Visual Studio\\2017\\Professional\\VC\\Auxiliary\\Build\\vcvarsall.bat\n");
+        fprintf(bat_script, "if exist \"%%VCVARS%%\" goto vc_vars_found\n");
+        fprintf(bat_script, "set VCVARS=C:\\Program Files (x86)\\Microsoft Visual Studio\\2017\\Community\\VC\\Auxiliary\\Build\\vcvarsall.bat\n");
+        fprintf(bat_script, "if exist \"%%VCVARS%%\" goto vc_vars_found\n");
+        fprintf(bat_script, "\n");
+
+        fprintf(bat_script, "echo unable to find vcvarsall.bat\n");
+        fprintf(bat_script, "goto error\n");
+        fprintf(bat_script, "\n");
+
+        fprintf(bat_script, ":vc_vars_found\n");
+        fprintf(bat_script, "echo found vcvarsall.bat: \"%%VCVARS%%\"\n");
+        fprintf(bat_script, "call \"%%VCVARS%%\" x64 > NUL\n");
+        fprintf(bat_script, "echo.\n");
+        fprintf(bat_script, "\n");
+
+        fprintf(bat_script, ":compiler_setup\n");
+        fprintf(bat_script, "set COMPILERFLAGS=/diagnostics:column /EHa- /FC /fp:except- /fp:fast /Gm- /GR- /GS- /Gs9999999 /nologo /W4 /WX /Z7 /Zo\n");
+        fprintf(bat_script, "if %%RELEASEBUILD%% equ 0 (\n");
+        fprintf(bat_script, "    set COMPILERFLAGSEXE=%%CompilerFlags%% /MTd /Od /DINTERNAL_BUILD\n");
+        fprintf(bat_script, "    set COMPILERFLAGSDLL=%%CompilerFlags%% /LDd /Od /DINTERNAL_BUILD\n");
+        fprintf(bat_script, ")\n");
+        fprintf(bat_script, "if %%RELEASEBUILD%% equ 1 (\n");
+        fprintf(bat_script, "    set COMPILERFLAGSEXE=%%COMPILERFLAGS%% /MT /Oi /O2 /DRELEASE_BUILD\n");
+        fprintf(bat_script, "    set COMPILERFLAGSDLL=%%COMPILERFLAGS%% /LD /Oi /O2 /DRELEASE_BUILD\n");
+        fprintf(bat_script, ")\n");
+        fprintf(bat_script, "\n");
+
+        fprintf(bat_script, ":linker_setup\n");
+        fprintf(bat_script, "set LINKERFLAGS=/INCREMENTAL:NO /MAP /NODEFAULTLIB /OPT:REF /STACK:0x100000,0x100000\n");
+        fprintf(bat_script, "set LINKERFLAGSEXE=%%LINKERFLAGS%% /PDB:platform_win32.pdb /ENTRY:main /SUBSYSTEM:WINDOWS\n");
+        fprintf(bat_script, "set LINKERFLAGSDLL=%%LINKERFLAGS%% /PDB:game_%%random%%.pdb /NOENTRY -EXPORT:update\n");
+        fprintf(bat_script, "\n");
+
+        fprintf(bat_script, "if not exist \"..\\bin\\win32\" mkdir \"..\\bin\\win32\"\n");
+        fprintf(bat_script, "pushd \"..\\bin\\win32\"\n");
+        fprintf(bat_script, "\n");
+
+        fprintf(bat_script, "del *.exp 2> NUL\n");
+        fprintf(bat_script, "del *.lib 2> NUL\n");
+        fprintf(bat_script, "del *.map 2> NUL\n");
+        fprintf(bat_script, "del *.o   2> NUL\n");
+        fprintf(bat_script, "del *.obj 2> NUL\n");
+        fprintf(bat_script, "del *.pdb 2> NUL\n");
+        fprintf(bat_script, "\n");
+
+        fprintf(bat_script, "echo.\n");
+        fprintf(bat_script, "echo building game dll...\n");
+        fprintf(bat_script, "cl %%COMPILERFLAGSDLL%% /EP /C \"..\\..\\src\\game.cpp\" > expanded_game.cpp\n");
+        fprintf(bat_script, "cl %%COMPILERFLAGSDLL%% \"..\\..\\src\\game.cpp\" /link /PDB:game_%%random%%.pdb %%LINKERFLAGSDLL%%\n");
+        fprintf(bat_script, "if %%ERRORLEVEL%% neq 0 goto error\n");
+        fprintf(bat_script, "\n");
+
+        fprintf(bat_script, "echo.\n");
+        fprintf(bat_script, "echo building game exe...\n");
+        fprintf(bat_script, "cl %%COMPILERFLAGSEXE%% /EP /C \"..\\..\\src\\platform_win32.cpp\" > expanded_platform_win32.cpp\n");
+        fprintf(bat_script, "cl %%COMPILERFLAGSEXE%% \"..\\..\\src\\platform_win32.cpp\" /link /PDB:platform_win32.pdb %%LINKERFLAGSEXE%% kernel32.lib\n");
+        fprintf(bat_script, "if %%ERRORLEVEL%% neq 0 goto error\n");
+        fprintf(bat_script, "\n");
+
+        fprintf(bat_script, "del *.exp 2> NUL\n");
+        fprintf(bat_script, "del *.lib 2> NUL\n");
+        fprintf(bat_script, "del *.o   2> NUL\n");
+        fprintf(bat_script, "del *.obj 2> NUL\n");
+        fprintf(bat_script, "\n");
+
+        fprintf(bat_script, ":end\n");
+        fprintf(bat_script, "echo.\n");
+        fprintf(bat_script, "echo build complete!\n");
+        fprintf(bat_script, "popd\n");
+        fprintf(bat_script, "exit /b 0\n");
+        fprintf(bat_script, "\n");
+
+        fprintf(bat_script, ":error\n");
+        fprintf(bat_script, "echo.\n");
+        fprintf(bat_script, "echo build error, quitting...\n");
+        fprintf(bat_script, "popd\n");
+        fprintf(bat_script, "exit /b 1\n");
+        fprintf(bat_script, "\n");
+
+        fclose(bat_script);
+    }
+}
+
+// hotkeys
+CUSTOM_COMMAND_SIG(ryanb_command_lister) {
+    View_ID view = get_this_ctx_view(app, Access_Always);
+    if (view == 0) return;
+
+    Scratch_Block scratch(app, Scratch_Share);
+
+    Lister* lister = begin_lister(app, scratch);
+    lister_set_query(lister, string_u8_litexpr("Select a command..."));
+    lister->handlers = lister_get_default_handlers();
+
+    lister_add_item(lister, string_u8_litexpr("apply theme from current buffer"), string_u8_litexpr(""), (void*)load_theme_current_buffer, 0);
+    lister_add_item(lister, string_u8_litexpr("create build script"), string_u8_litexpr(""), (void*)ryanb_create_build_script, 0);
+
+    Lister_Result result = run_lister(app, lister);
+
+    if (!result.canceled) {
+        Custom_Command_Function* command = (Custom_Command_Function*)(result.user_data);
+        if (command != 0) {
+            view_enqueue_command_function(app, view, command);
+        }
+    }
+}
+
+CUSTOM_COMMAND_SIG(ryanb_duplicate_line) {
+    duplicate_line(app);
+    move_down(app);
+}
+
+CUSTOM_COMMAND_SIG(ryanb_set_bookmark) {
+    if (ryanb_is_cursor_at_bookmark(app)) {
+        return;
+    }
+
+    Bookmark* bookmark = &bookmarks[bookmark_cursor];
+    if (bookmark->is_valid) {
+
+        ryanb_bookmark_cursor_inc();
+        bookmark = &bookmarks[bookmark_cursor];
+    }
+
+    View_ID view = get_active_view(app, Access_ReadVisible);
+
+    bookmark->view = view;
+    bookmark->buffer = view_get_buffer(app, view, Access_ReadVisible);
+    bookmark->pos = view_get_cursor_pos(app, view);
+    bookmark->is_valid = true;
+
+    ryanb_bookmark_cursor_inc();
+    bookmarks[bookmark_cursor].is_valid = false;
+    ryanb_bookmark_cursor_dec();
+}
+
+CUSTOM_COMMAND_SIG(ryanb_goto_bookmark_next) {
+    ryanb_bookmark_cursor_inc();
+    Bookmark* bookmark = &bookmarks[bookmark_cursor];
+
+    if (bookmark->is_valid) {
+        View_ID view = bookmark->view;
+        Buffer_ID buffer = bookmark->buffer;
+        i64 pos = bookmark->pos;
+
+        switch_to_existing_view(app, view, buffer);
+        set_view_to_location(app, view, buffer, seek_pos(pos));
+        view_set_active(app, view);
+        center_view(app);
+    }
+    else {
+        ryanb_bookmark_cursor_dec();
+    }
+}
+
+CUSTOM_COMMAND_SIG(ryanb_goto_bookmark_prev) {
+    if (ryanb_is_cursor_at_bookmark(app)) {
+        ryanb_bookmark_cursor_dec();
+    }
+    Bookmark* bookmark = &bookmarks[bookmark_cursor];
+
+    if (bookmark->is_valid) {
+        View_ID view = bookmark->view;
+        Buffer_ID buffer = bookmark->buffer;
+        i64 pos = bookmark->pos;
+
+        switch_to_existing_view(app, view, buffer);
+        set_view_to_location(app, view, buffer, seek_pos(pos));
+        view_set_active(app, view);
+        center_view(app);
+    }
+    else {
+        ryanb_bookmark_cursor_inc();
+    }
+}
+
+CUSTOM_COMMAND_SIG(ryanb_goto_end_of_file) {
+    goto_end_of_file(app);
+    center_view(app);
+}
+
+CUSTOM_COMMAND_SIG(ryanb_goto_definition) {
+    Scratch_Block scratch(app);
+
+    View_ID view = get_active_view(app, Access_ReadVisible);
+    Buffer_ID buffer_id = view_get_buffer(app, view, Access_ReadVisible);
+
+    i64 pos = view_get_cursor_pos(app, view);
+    Range_i64 range = enclose_pos_alpha_numeric_underscore(app, buffer_id, pos);
+    String_Const_u8 query = push_buffer_range(app, scratch, buffer_id, range);
+
+    code_index_lock();
+
+    for (Buffer_ID buffer = get_buffer_next(app, 0, Access_Always); buffer != 0; buffer = get_buffer_next(app, buffer, Access_Always)) {
+        Code_Index_File* file = code_index_get_file(buffer);
+        if (file == 0) continue;
+
+        for (i32 i = 0; i < file->note_array.count; ++i) {
+            Code_Index_Note* note = file->note_array.ptrs[i];
+            if (string_match(note->text, query)) {
+                ryanb_set_bookmark(app);
+                switch_to_existing_view(app, view, buffer);
+                set_view_to_location(app, view, buffer, seek_pos(note->pos.first));
+                center_view(app);
+                ryanb_set_bookmark(app);
+                break;
+            }
+        }
+    }
+
+    code_index_unlock();
+}
+
+CUSTOM_COMMAND_SIG(ryanb_goto_line) {
+    goto_line(app);
+    center_view(app);
+}
+
+CUSTOM_COMMAND_SIG(ryanb_interactive_open_all_code) {
+    close_all_code(app);
+    interactive_open(app);
+    open_all_code(app);
+}
+
+CUSTOM_COMMAND_SIG(ryanb_kill_panel) {
+    View_ID view = get_active_view(app, Access_ReadWriteVisible);
+    if (view == build_footer_panel_view_id) {
+        close_build_footer_panel(app);
+    }
+    else {
+        kill_buffer(app);
+        close_panel(app);
+    }
+}
+
+CUSTOM_COMMAND_SIG(ryanb_kill_to_end_of_line) {
+    Scratch_Block scratch(app);
+    current_view_boundary_delete(app, Scan_Forward, push_boundary_list(scratch, boundary_line));
+}
+
+CUSTOM_COMMAND_SIG(ryanb_list_all_locations) {
+    Scratch_Block scratch(app);
+
+    View_ID view = get_active_view(app, Access_ReadVisible);
+    Buffer_ID buffer = view_get_buffer(app, view, Access_ReadVisible);
+    i64 buffer_size = buffer_get_size(app, buffer);
+
+    // get token under cursor
+    i64 pos_origin = view_get_cursor_pos(app, view);
+    Range_i64 range = enclose_pos_alpha_numeric_underscore(app, buffer, pos_origin);
+    String_Const_u8 query_init = push_buffer_range(app, scratch, buffer, range);
+
+    Query_Bar_Group group(app);
+    Query_Bar bar = {};
+    if (start_query_bar(app, &bar, 0) == 0) {
+        return;
+    }
+
+    u8 bar_string_space[256];
+    bar.string = SCu8(bar_string_space, query_init.size);
+    block_copy(bar.string.str, query_init.str, query_init.size);
+    bar.prompt = string_u8_litexpr("Search All: ");
+
+    b32 do_list = false;
+    User_Input in = { };
+    for (;;) {
+        in = get_next_input(app, EventPropertyGroup_AnyKeyboardEvent, EventProperty_Escape|EventProperty_ViewActivation);
+        if (in.abort) {
+            break;
+        }
+        if (match_key_code(&in, KeyCode_Return)) {
+            do_list = true;
+            break;
+        }
+
+        // allow paste
+        b32 did_paste = false;
+        if (match_key_code(&in, KeyCode_V)) {
+            Input_Modifier_Set* mods = &in.event.key.modifiers;
+            if (has_modifier(mods, KeyCode_Control)) {
+                did_paste = true;
+                String_Const_u8 paste = push_clipboard_index(app, scratch, 0, 0);
+                if (paste.size > 0) {
+                    bar.string.size = 0;
+                    String_u8 bar_string = Su8(bar.string, sizeof(bar_string_space));
+                    string_append(&bar_string, paste);
+                    bar.string = bar_string.string;
+                }
+            }
+        }
+
+        if (!did_paste) {
+            String_Const_u8 string = to_writable(&in);
+            if (string.str != 0 && string.size > 0) {
+                String_u8 bar_string = Su8(bar.string, sizeof(bar_string_space));
+                string_append(&bar_string, string);
+                bar.string = bar_string.string;
+            }
+            else if (match_key_code(&in, KeyCode_Backspace)){
+                if (is_unmodified_key(&in.event)) {
+                    u64 old_bar_string_size = bar.string.size;
+                    bar.string = backspace_utf8(bar.string);
+                }
+                else if (has_modifier(&in.event.key.modifiers, KeyCode_Control)) {
+                    if (bar.string.size > 0){
+                        bar.string.size = 0;
+                    }
+                }
+            }
+            else {
+                leave_current_input_unhandled(app);
+            }
+        }
+    }
+
+    if (do_list) {
+        list_all_locations__generic(app, bar.string, ListAllLocationsFlag_CaseSensitive);
+    }
+}
+
+CUSTOM_COMMAND_SIG(ryanb_move_down_to_blank_line) {
+    move_down_to_blank_line(app);
+    center_view(app);
+}
+
+CUSTOM_COMMAND_SIG(ryanb_move_left_token_boundary) {
+    Scratch_Block scratch(app);
+    current_view_scan_move(app, Scan_Backward, push_boundary_list(scratch, boundary_token, boundary_non_whitespace));
+}
+
+CUSTOM_COMMAND_SIG(ryanb_move_right_token_boundary) {
+    Scratch_Block scratch(app);
+    current_view_scan_move(app, Scan_Forward, push_boundary_list(scratch, boundary_token, boundary_non_whitespace));
+}
+
+CUSTOM_COMMAND_SIG(ryanb_move_up_to_blank_line) {
+    move_up_to_blank_line(app);
+    center_view(app);
+}
+
+CUSTOM_COMMAND_SIG(ryanb_open_panel_vsplit) {
+    open_panel_vsplit(app);
+    swap_panels(app);
+    change_active_panel(app);
+    interactive_switch_buffer(app);
+}
+
+CUSTOM_COMMAND_SIG(ryanb_page_down) {
+    page_down(app);
+    center_view(app);
+}
+
+CUSTOM_COMMAND_SIG(ryanb_page_up) {
+    page_up(app);
+    center_view(app);
+}
+
+CUSTOM_COMMAND_SIG(ryanb_rename_identifier) {
+    View_ID view = get_active_view(app, Access_ReadWriteVisible);
+    Buffer_ID buffer = view_get_buffer(app, view, Access_ReadWriteVisible);
+    if (buffer == 0) return;
+
+    Scratch_Block scratch(app);
+
+    i64 pos = view_get_cursor_pos(app, view);
+    Range_i64 range = enclose_pos_alpha_numeric_underscore(app, buffer, pos);
+    String_Const_u8 identifier = push_buffer_range(app, scratch, buffer, range);
+    if (identifier.size != 0) {
+        Query_Bar_Group group(app);
+
+        Query_Bar replace = { };
+        replace.prompt = string_u8_litexpr("Give a new name to ");
+        replace.string = identifier;
+
+        start_query_bar(app, &replace, 0);
+
+        u8 with_space[1024];
+
+        Query_Bar with = { };
+        with.prompt = string_u8_litexpr("Name: ");
+        with.string = SCu8(with_space, (u64)0);
+        with.string_capacity = sizeof(with_space);
+
+        if (query_user_string(app, &with)) {
+            global_history_edit_group_begin(app);
+
+            for (Buffer_ID next = get_buffer_next(app, 0, Access_ReadWriteVisible); next != 0; next = get_buffer_next(app, next, Access_ReadWriteVisible)) {
+                replace_in_range(app, next, buffer_range(app, buffer), replace.string, with.string);
+            }
+
+            global_history_edit_group_end(app);
+        }
+    }
+}
+
+CUSTOM_COMMAND_SIG(ryanb_search) {
+    Scratch_Block scratch(app);
+
+    View_ID view = get_active_view(app, Access_ReadVisible);
+    Buffer_ID buffer = view_get_buffer(app, view, Access_ReadVisible);
+    i64 buffer_size = buffer_get_size(app, buffer);
+
+    i64 pos_origin = view_get_cursor_pos(app, view);
+    Range_i64 range = enclose_pos_alpha_numeric_underscore(app, buffer, pos_origin);
+    String_Const_u8 query_init = push_buffer_range(app, scratch, buffer, range);
+
+    Query_Bar_Group group(app);
+    Query_Bar bar = {};
+    if (start_query_bar(app, &bar, 0) == 0) {
+        return;
+    }
+
+    Scan_Direction scan = Scan_Forward;
+    i64 pos = pos_origin;
+
+    u8 bar_string_space[256];
+    bar.string = SCu8(bar_string_space, query_init.size);
+    block_copy(bar.string.str, query_init.str, query_init.size);
+    bar.prompt = string_u8_litexpr("Search: ");
+
+    u64 match_size = bar.string.size;
+
+    User_Input in = { };
+    for (;;) {
+        isearch__update_highlight(app, view, Ii64_size(pos, match_size));
+        center_view(app);
+
+        in = get_next_input(app, EventPropertyGroup_AnyKeyboardEvent, EventProperty_Escape|EventProperty_ViewActivation);
+        if (in.abort) {
+            break;
+        }
+
+        String_Const_u8 string = to_writable(&in);
+
+        b32 string_change = false;
+
+        // allow paste
+        if (match_key_code(&in, KeyCode_V)) {
+            Input_Modifier_Set* mods = &in.event.key.modifiers;
+            if (has_modifier(mods, KeyCode_Control)) {
+                String_Const_u8 paste = push_clipboard_index(app, scratch, 0, 0);
+                if (paste.size > 0) {
+                    bar.string.size = 0;
+                    String_u8 bar_string = Su8(bar.string, sizeof(bar_string_space));
+                    string_append(&bar_string, paste);
+                    bar.string = bar_string.string;
+                    string_change = true;
+                }
+            }
+        }
+
+        if (string.str != 0 && string.size > 0) {
+            String_u8 bar_string = Su8(bar.string, sizeof(bar_string_space));
+            string_append(&bar_string, string);
+            bar.string = bar_string.string;
+            string_change = true;
+        }
+        else if (match_key_code(&in, KeyCode_Backspace)){
+            if (is_unmodified_key(&in.event)) {
+                u64 old_bar_string_size = bar.string.size;
+                bar.string = backspace_utf8(bar.string);
+                string_change = (bar.string.size < old_bar_string_size);
+            }
+            else if (has_modifier(&in.event.key.modifiers, KeyCode_Control)) {
+                if (bar.string.size > 0){
+                    bar.string.size = 0;
+                    string_change = true;
+                }
+            }
+        }
+
+        b32 do_scan_action = false;
+        Scan_Direction change_scan = scan;
+        if (!string_change) {
+            if (match_key_code(&in, KeyCode_Return) || match_key_code(&in, KeyCode_Tab)) {
+                Input_Modifier_Set* mods = &in.event.key.modifiers;
+                do_scan_action = true;
+
+                if (has_modifier(mods, KeyCode_Shift)) {
+                    change_scan = Scan_Backward;
+                }
+                else {
+                    change_scan = Scan_Forward;
+                }
+            }
+        }
+
+        if (string_change){
+            switch (scan){
+                case Scan_Forward: {
+                    i64 new_pos = 0;
+                    seek_string_insensitive_forward(app, buffer, pos - 1, 0, bar.string, &new_pos);
+                    if (new_pos < buffer_size){
+                        pos = new_pos;
+                        match_size = bar.string.size;
+                    }
+                }
+                break;
+
+                case Scan_Backward: {
+                    i64 new_pos = 0;
+                    seek_string_insensitive_backward(app, buffer, pos + 1, 0, bar.string, &new_pos);
+                    if (new_pos >= 0){
+                        pos = new_pos;
+                        match_size = bar.string.size;
+                    }
+                }
+                break;
+            }
+        }
+        else if (do_scan_action) {
+            scan = change_scan;
+            switch (scan){
+                case Scan_Forward: {
+                    i64 new_pos = 0;
+                    seek_string_insensitive_forward(app, buffer, pos, 0, bar.string, &new_pos);
+                    if (new_pos < buffer_size){
+                        pos = new_pos;
+                        match_size = bar.string.size;
+                    }
+                }
+                break;
+
+                case Scan_Backward: {
+                    i64 new_pos = 0;
+                    seek_string_insensitive_backward(app, buffer, pos, 0, bar.string, &new_pos);
+                    if (new_pos >= 0){
+                        pos = new_pos;
+                        match_size = bar.string.size;
+                    }
+                }
+                break;
+            }
+        }
+        else{
+            leave_current_input_unhandled(app);
+        }
+    }
+
+    view_disable_highlight_range(app, view);
+    view_set_cursor_and_preferred_x(app, view, seek_pos(pos));
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -508,7 +1259,7 @@ ryanb_draw_file_bar(Application_Links *app, View_ID view_id, Buffer_ID buffer, F
 }
 
 function void
-ryanb_draw_notepad_style_cursor_highlight(Application_Links *app, Frame_Info frame_info, View_ID view_id, b32 is_active_view, Buffer_ID buffer, Text_Layout_ID text_layout_id, f32 roundness) {
+ryanb_draw_notepad_style_cursor_highlight(Application_Links* app, Frame_Info frame_info, View_ID view_id, b32 is_active_view, Buffer_ID buffer, Text_Layout_ID text_layout_id, f32 roundness) {
     ProfileScope(app, "ryanb draw notepad style cursor highlight");
 
     static f32 accumulator = 0.0f;
@@ -530,10 +1281,19 @@ ryanb_draw_notepad_style_cursor_highlight(Application_Links *app, Frame_Info fra
             }
 
             animate_in_n_milliseconds(app, 0);
-            accumulator += frame_info.literal_dt;
 
+            accumulator += frame_info.literal_dt;
             if (accumulator >= cursor_fade_time || last_cursor_pos != cursor_pos) {
                 accumulator = 0.0f;
+            }
+
+            auto_bookmark_time_remaining -= frame_info.literal_dt;
+            if (last_cursor_pos != cursor_pos) {
+                auto_bookmark_time_remaining = auto_bookmark_seconds;
+            }
+            if (auto_bookmark_time_remaining <= 0.0f) {
+                auto_bookmark_time_remaining = auto_bookmark_seconds;
+                ryanb_set_bookmark(app);
             }
 
             Rect_f32 rect = text_layout_character_on_screen(app, text_layout_id, cursor_pos);
@@ -638,686 +1398,7 @@ ryanb_draw_scope_annotations(Application_Links *app, Buffer_ID buffer, Text_Layo
 }
 
 /////////////////////////////////////////////////////////////////////////////
-// CUSTOM COMMANDS                                                         //
-/////////////////////////////////////////////////////////////////////////////
-
-// hooks
-BUFFER_HOOK_SIG(ryanb_file_save) {
-    ProfileScope(app, "ryanb file save");
-    b32 is_virtual = global_config.enable_virtual_whitespace;
-    if (global_config.automatically_indent_text_on_save && is_virtual){
-        auto_indent_buffer(app, buffer_id, buffer_range(app, buffer_id));
-    }
-
-    clean_all_lines(app);
-
-#if OS_WINDOWS
-    {
-        rewrite_lines_to_crlf(app, buffer_id);
-        set_eol_mode_to_crlf(app);
-    }
-#elif (OS_LINUX || OS_MAC)
-    {
-        rewrite_lines_to_lf(app, buffer_id);
-        set_eol_mode_to_lf(app);
-    }
-#endif
-
-    return (0);
-}
-
-BUFFER_HOOK_SIG(ryanb_new_file){
-    Scratch_Block scratch(app);
-    String_Const_u8 file_name = push_buffer_base_name(app, scratch, buffer_id);
-
-    // skip non .h files
-    if (!string_match(string_postfix(file_name, 2), string_u8_litexpr(".h"))) {
-        return (0);
-    }
-
-    // convert file_name to header guard string
-    String_Const_u8 guard = push_string_copy(scratch, file_name);
-    for (u64 i = 0; i < guard.size; ++i){
-        // lower to upper
-        if (guard.str[i] >= 'a' && guard.str[i] <= 'z') {
-            guard.str[i] -= ('a' - 'A');
-        }
-        // change . to _
-        else if (guard.str[i] == '.') {
-            guard.str[i] = '_';
-        }
-    }
-
-    // insert header guards
-    Buffer_Insertion insert = begin_buffer_insertion_at_buffered(app, buffer_id, 0, scratch, KB(16));
-    insertf(&insert,
-            "#ifndef %.*s\n"
-            "#define %.*s\n"
-            "\n"
-            "#endif // %.*s\n",
-            string_expand(guard),
-            string_expand(guard),
-            string_expand(guard));
-    end_buffer_insertion(&insert);
-
-    return (0);
-}
-
-// events
-CUSTOM_COMMAND_SIG(ryanb_startup) {
-    ProfileScope(app, "ryanb startup");
-    User_Input input = get_current_input(app);
-    if (match_core_code(&input, CoreCode_Startup)){
-        String_Const_u8_Array file_names = input.event.core.file_names;
-        load_themes_default_folder(app);
-        default_4coder_initialize(app, file_names);
-        default_4coder_side_by_side_panels(app, file_names);
-        if (global_config.automatically_load_project){
-            load_project(app);
-        }
-    }
-
-    system_set_fullscreen(true);
-}
-
-CUSTOM_COMMAND_SIG(ryanb_write_text) {
-    View_ID view = get_active_view(app, Access_ReadWriteVisible);
-    Buffer_ID buffer = view_get_buffer(app, view, Access_ReadWriteVisible);
-
-    // skip when in comments
-    i64 start = get_start_of_line_at_cursor(app, view, buffer);
-    if (c_line_comment_starts_at_position(app, buffer, start)) {
-        write_text_input(app);
-        return;
-    }
-
-    i64 pos = view_get_cursor_pos(app, view);
-
-    User_Input in = get_current_input(app);
-    String_Const_u8 insert = to_writable(&in);
-
-    b32 is_quote = false;
-    b32 is_closing_brace = false;
-    if (insert.str != 0 && insert.size > 0) {
-        switch (insert.str[0]) {
-            case '{': {
-                write_string(app, string_u8_litexpr("{}"));
-            }
-            break;
-
-            case '(': {
-                write_string(app, string_u8_litexpr("()"));
-            }
-            break;
-
-            case '[': {
-                write_string(app, string_u8_litexpr("[]"));
-            }
-            break;
-
-            case '}':
-            case ')':
-            case ']': {
-                is_closing_brace = true;
-            }
-            break;
-
-            case '\'':
-            case '\"': {
-                is_quote = true;
-            }
-            break;
-
-            default: {
-                write_text_input(app);
-                return;
-            }
-        }
-    }
-
-    if (is_closing_brace || is_quote) {
-        u8 next_character = 0;
-        buffer_read_range(app, buffer, Ii64(pos, pos + 1), &next_character);
-
-        if (insert.str[0] != next_character) {
-            write_string(app, SCu8(insert.str, 1));
-            if (is_quote) {
-                write_string(app, SCu8(insert.str, 1));
-            }
-        }
-    }
-
-    view_set_cursor_and_preferred_x(app, view, seek_pos(pos + 1));
-}
-
-CUSTOM_COMMAND_SIG(ryanb_create_build_script) {
-    FILE* bat_script = fopen("build.bat", "wb");
-    if (bat_script != 0) {
-        fprintf(bat_script, "@echo off\n");
-        fprintf(bat_script, "\n");
-
-        fprintf(bat_script, ":options\n");
-        fprintf(bat_script, "set RELEASEBUILD=0\n");
-        fprintf(bat_script, "\n");
-
-        fprintf(bat_script, ":win32\n");
-        fprintf(bat_script, "echo [WINDOWS]\n");
-        fprintf(bat_script, "if %%RELEASEBUILD%% equ 1 echo Release Build\n");
-        fprintf(bat_script, "if %%RELEASEBUILD%% neq 1 echo Internal Build\n");
-        fprintf(bat_script, "echo.\n");
-        fprintf(bat_script, "\n");
-
-        fprintf(bat_script, "where /q cl\n");
-        fprintf(bat_script, "if %%ERRORLEVEL%% equ 0 goto compiler_setup\n");
-        fprintf(bat_script, "\n");
-
-        fprintf(bat_script, ":msvc\n");
-        fprintf(bat_script, "echo [MSVC]\n");
-        fprintf(bat_script, "echo finding vcvarsall.bat...\n");
-        fprintf(bat_script, "set VCVARS=C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Enterprise\\VC\\Auxiliary\\Build\\vcvarsall.bat\n");
-        fprintf(bat_script, "if exist \"%%VCVARS%%\" goto vc_vars_found\n");
-        fprintf(bat_script, "set VCVARS=C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Professional\\VC\\Auxiliary\\Build\\vcvarsall.bat\n");
-        fprintf(bat_script, "if exist \"%%VCVARS%%\" goto vc_vars_found\n");
-        fprintf(bat_script, "set VCVARS=C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\\Auxiliary\\Build\\vcvarsall.bat\n");
-        fprintf(bat_script, "if exist \"%%VCVARS%%\" goto vc_vars_found\n");
-        fprintf(bat_script, "set VCVARS=C:\\Program Files (x86)\\Microsoft Visual Studio\\2017\\Enterprise\\VC\\Auxiliary\\Build\\vcvarsall.bat\n");
-        fprintf(bat_script, "if exist \"%%VCVARS%%\" goto vc_vars_found\n");
-        fprintf(bat_script, "set VCVARS=C:\\Program Files (x86)\\Microsoft Visual Studio\\2017\\Professional\\VC\\Auxiliary\\Build\\vcvarsall.bat\n");
-        fprintf(bat_script, "if exist \"%%VCVARS%%\" goto vc_vars_found\n");
-        fprintf(bat_script, "set VCVARS=C:\\Program Files (x86)\\Microsoft Visual Studio\\2017\\Community\\VC\\Auxiliary\\Build\\vcvarsall.bat\n");
-        fprintf(bat_script, "if exist \"%%VCVARS%%\" goto vc_vars_found\n");
-        fprintf(bat_script, "\n");
-
-        fprintf(bat_script, "echo unable to find vcvarsall.bat\n");
-        fprintf(bat_script, "goto error\n");
-        fprintf(bat_script, "\n");
-
-        fprintf(bat_script, ":vc_vars_found\n");
-        fprintf(bat_script, "echo found vcvarsall.bat: \"%%VCVARS%%\"\n");
-        fprintf(bat_script, "call \"%%VCVARS%%\" x64 > NUL\n");
-        fprintf(bat_script, "echo.\n");
-        fprintf(bat_script, "\n");
-
-        fprintf(bat_script, ":compiler_setup\n");
-        fprintf(bat_script, "set COMPILERFLAGS=/diagnostics:column /EHa- /FC /fp:except- /fp:fast /Gm- /GR- /GS- /Gs9999999 /nologo /W4 /WX /Z7 /Zo\n");
-        fprintf(bat_script, "if %%RELEASEBUILD%% equ 0 (\n");
-        fprintf(bat_script, "    set COMPILERFLAGSEXE=%%CompilerFlags%% /MTd /Od /DINTERNAL_BUILD\n");
-        fprintf(bat_script, "    set COMPILERFLAGSDLL=%%CompilerFlags%% /LDd /Od /DINTERNAL_BUILD\n");
-        fprintf(bat_script, ")\n");
-        fprintf(bat_script, "if %%RELEASEBUILD%% equ 1 (\n");
-        fprintf(bat_script, "    set COMPILERFLAGSEXE=%%COMPILERFLAGS%% /MT /Oi /O2 /DRELEASE_BUILD\n");
-        fprintf(bat_script, "    set COMPILERFLAGSDLL=%%COMPILERFLAGS%% /LD /Oi /O2 /DRELEASE_BUILD\n");
-        fprintf(bat_script, ")\n");
-        fprintf(bat_script, "\n");
-
-        fprintf(bat_script, ":linker_setup\n");
-        fprintf(bat_script, "set LINKERFLAGS=/INCREMENTAL:NO /MAP /NODEFAULTLIB /OPT:REF /STACK:0x100000,0x100000\n");
-        fprintf(bat_script, "set LINKERFLAGSEXE=%%LINKERFLAGS%% /PDB:platform_win32.pdb /ENTRY:main /SUBSYSTEM:WINDOWS\n");
-        fprintf(bat_script, "set LINKERFLAGSDLL=%%LINKERFLAGS%% /PDB:game_%%random%%.pdb /NOENTRY -EXPORT:update\n");
-        fprintf(bat_script, "\n");
-
-        fprintf(bat_script, "if not exist \"..\\bin\\win32\" mkdir \"..\\bin\\win32\"\n");
-        fprintf(bat_script, "pushd \"..\\bin\\win32\"\n");
-        fprintf(bat_script, "\n");
-
-        fprintf(bat_script, "del *.exp 2> NUL\n");
-        fprintf(bat_script, "del *.lib 2> NUL\n");
-        fprintf(bat_script, "del *.map 2> NUL\n");
-        fprintf(bat_script, "del *.o   2> NUL\n");
-        fprintf(bat_script, "del *.obj 2> NUL\n");
-        fprintf(bat_script, "del *.pdb 2> NUL\n");
-        fprintf(bat_script, "\n");
-
-        fprintf(bat_script, "echo.\n");
-        fprintf(bat_script, "echo building game dll...\n");
-        fprintf(bat_script, "cl %%COMPILERFLAGSDLL%% /EP /C \"..\\..\\src\\game.cpp\" > expanded_game.cpp\n");
-        fprintf(bat_script, "cl %%COMPILERFLAGSDLL%% \"..\\..\\src\\game.cpp\" /link /PDB:game_%%random%%.pdb %%LINKERFLAGSDLL%%\n");
-        fprintf(bat_script, "if %%ERRORLEVEL%% neq 0 goto error\n");
-        fprintf(bat_script, "\n");
-
-        fprintf(bat_script, "echo.\n");
-        fprintf(bat_script, "echo building game exe...\n");
-        fprintf(bat_script, "cl %%COMPILERFLAGSEXE%% /EP /C \"..\\..\\src\\platform_win32.cpp\" > expanded_platform_win32.cpp\n");
-        fprintf(bat_script, "cl %%COMPILERFLAGSEXE%% \"..\\..\\src\\platform_win32.cpp\" /link /PDB:platform_win32.pdb %%LINKERFLAGSEXE%% kernel32.lib\n");
-        fprintf(bat_script, "if %%ERRORLEVEL%% neq 0 goto error\n");
-        fprintf(bat_script, "\n");
-
-        fprintf(bat_script, "del *.exp 2> NUL\n");
-        fprintf(bat_script, "del *.lib 2> NUL\n");
-        fprintf(bat_script, "del *.o   2> NUL\n");
-        fprintf(bat_script, "del *.obj 2> NUL\n");
-        fprintf(bat_script, "\n");
-
-        fprintf(bat_script, ":end\n");
-        fprintf(bat_script, "echo.\n");
-        fprintf(bat_script, "echo build complete!\n");
-        fprintf(bat_script, "popd\n");
-        fprintf(bat_script, "exit /b 0\n");
-        fprintf(bat_script, "\n");
-
-        fprintf(bat_script, ":error\n");
-        fprintf(bat_script, "echo.\n");
-        fprintf(bat_script, "echo build error, quitting...\n");
-        fprintf(bat_script, "popd\n");
-        fprintf(bat_script, "exit /b 1\n");
-        fprintf(bat_script, "\n");
-
-        fclose(bat_script);
-    }
-}
-
-// hotkeys
-CUSTOM_COMMAND_SIG(ryanb_command_lister) {
-    View_ID view = get_this_ctx_view(app, Access_Always);
-    if (view == 0) return;
-
-    Scratch_Block scratch(app, Scratch_Share);
-
-    Lister* lister = begin_lister(app, scratch);
-    lister_set_query(lister, string_u8_litexpr("Select a command..."));
-    lister->handlers = lister_get_default_handlers();
-
-    lister_add_item(lister, string_u8_litexpr("apply theme from current buffer"), string_u8_litexpr(""), (void*)load_theme_current_buffer, 0);
-    lister_add_item(lister, string_u8_litexpr("create build script"), string_u8_litexpr(""), (void*)ryanb_create_build_script, 0);
-
-
-    Lister_Result result = run_lister(app, lister);
-
-    if (!result.canceled) {
-        Custom_Command_Function* command = (Custom_Command_Function*)(result.user_data);
-        if (command != 0) {
-            view_enqueue_command_function(app, view, command);
-        }
-    }
-}
-
-CUSTOM_COMMAND_SIG(ryanb_duplicate_line) {
-    duplicate_line(app);
-    move_down(app);
-}
-
-CUSTOM_COMMAND_SIG(ryanb_goto_bookmark) {
-    View_ID view = global_bookmark.view;
-    Buffer_ID buffer = global_bookmark.buffer;
-    i64 pos = global_bookmark.pos;
-
-    ryanb_bookmark_location(app);
-
-    switch_to_existing_view(app, view, buffer);
-    set_view_to_location(app, view, buffer, seek_pos(pos));
-    view_set_active(app, view);
-    center_view(app);
-}
-
-CUSTOM_COMMAND_SIG(ryanb_goto_end_of_file) {
-    goto_end_of_file(app);
-    center_view(app);
-}
-
-CUSTOM_COMMAND_SIG(ryanb_goto_definition) {
-    Scratch_Block scratch(app);
-
-    View_ID view = get_active_view(app, Access_ReadVisible);
-    Buffer_ID buffer_id = view_get_buffer(app, view, Access_ReadVisible);
-
-    i64 pos = view_get_cursor_pos(app, view);
-    Range_i64 range = enclose_pos_alpha_numeric_underscore(app, buffer_id, pos);
-    String_Const_u8 query = push_buffer_range(app, scratch, buffer_id, range);
-
-    code_index_lock();
-
-    for (Buffer_ID buffer = get_buffer_next(app, 0, Access_Always); buffer != 0; buffer = get_buffer_next(app, buffer, Access_Always)) {
-        Code_Index_File* file = code_index_get_file(buffer);
-        if (file == 0) continue;
-
-        for (i32 i = 0; i < file->note_array.count; ++i) {
-            Code_Index_Note* note = file->note_array.ptrs[i];
-            if (string_match(note->text, query)) {
-                ryanb_bookmark_location(app);
-                switch_to_existing_view(app, view, buffer);
-                set_view_to_location(app, view, buffer, seek_pos(note->pos.first));
-                center_view(app);
-                break;
-            }
-        }
-    }
-
-    code_index_unlock();
-}
-
-CUSTOM_COMMAND_SIG(ryanb_goto_line) {
-    goto_line(app);
-    center_view(app);
-}
-
-CUSTOM_COMMAND_SIG(ryanb_interactive_open_all_code) {
-    close_all_code(app);
-    interactive_open(app);
-    open_all_code(app);
-}
-
-CUSTOM_COMMAND_SIG(ryanb_kill_panel) {
-    View_ID view = get_active_view(app, Access_ReadWriteVisible);
-    if (view == build_footer_panel_view_id) {
-        close_build_footer_panel(app);
-    }
-    else {
-        kill_buffer(app);
-        close_panel(app);
-    }
-}
-
-CUSTOM_COMMAND_SIG(ryanb_kill_to_end_of_line) {
-    Scratch_Block scratch(app);
-    current_view_boundary_delete(app, Scan_Forward, push_boundary_list(scratch, boundary_line));
-}
-
-CUSTOM_COMMAND_SIG(ryanb_list_all_locations) {
-    Scratch_Block scratch(app);
-
-    View_ID view = get_active_view(app, Access_ReadVisible);
-    Buffer_ID buffer = view_get_buffer(app, view, Access_ReadVisible);
-    i64 buffer_size = buffer_get_size(app, buffer);
-
-    // get token under cursor
-    i64 pos_origin = view_get_cursor_pos(app, view);
-    Range_i64 range = enclose_pos_alpha_numeric_underscore(app, buffer, pos_origin);
-    String_Const_u8 query_init = push_buffer_range(app, scratch, buffer, range);
-
-    Query_Bar_Group group(app);
-    Query_Bar bar = {};
-    if (start_query_bar(app, &bar, 0) == 0) {
-        return;
-    }
-
-    u8 bar_string_space[256];
-    bar.string = SCu8(bar_string_space, query_init.size);
-    block_copy(bar.string.str, query_init.str, query_init.size);
-    bar.prompt = string_u8_litexpr("Search All: ");
-
-    b32 do_list = false;
-    User_Input in = { };
-    for (;;) {
-        in = get_next_input(app, EventPropertyGroup_AnyKeyboardEvent, EventProperty_Escape|EventProperty_ViewActivation);
-        if (in.abort) {
-            break;
-        }
-        if (match_key_code(&in, KeyCode_Return)) {
-            do_list = true;
-            break;
-        }
-
-        // allow paste
-        b32 did_paste = false;
-        if (match_key_code(&in, KeyCode_V)) {
-            Input_Modifier_Set* mods = &in.event.key.modifiers;
-            if (has_modifier(mods, KeyCode_Control)) {
-                did_paste = true;
-                String_Const_u8 paste = push_clipboard_index(app, scratch, 0, 0);
-                if (paste.size > 0) {
-                    bar.string.size = 0;
-                    String_u8 bar_string = Su8(bar.string, sizeof(bar_string_space));
-                    string_append(&bar_string, paste);
-                    bar.string = bar_string.string;
-                }
-            }
-        }
-
-        if (!did_paste) {
-            String_Const_u8 string = to_writable(&in);
-            if (string.str != 0 && string.size > 0) {
-                String_u8 bar_string = Su8(bar.string, sizeof(bar_string_space));
-                string_append(&bar_string, string);
-                bar.string = bar_string.string;
-            }
-            else if (match_key_code(&in, KeyCode_Backspace)){
-                if (is_unmodified_key(&in.event)) {
-                    u64 old_bar_string_size = bar.string.size;
-                    bar.string = backspace_utf8(bar.string);
-                }
-                else if (has_modifier(&in.event.key.modifiers, KeyCode_Control)) {
-                    if (bar.string.size > 0){
-                        bar.string.size = 0;
-                    }
-                }
-            }
-            else {
-                leave_current_input_unhandled(app);
-            }
-        }
-    }
-
-    if (do_list) {
-        list_all_locations__generic(app, bar.string, ListAllLocationsFlag_CaseSensitive);
-    }
-}
-
-CUSTOM_COMMAND_SIG(ryanb_move_down_to_blank_line) {
-    move_down_to_blank_line(app);
-    center_view(app);
-}
-
-CUSTOM_COMMAND_SIG(ryanb_move_left_token_boundary) {
-    Scratch_Block scratch(app);
-    current_view_scan_move(app, Scan_Backward, push_boundary_list(scratch, boundary_token, boundary_non_whitespace));
-}
-
-CUSTOM_COMMAND_SIG(ryanb_move_right_token_boundary) {
-    Scratch_Block scratch(app);
-    current_view_scan_move(app, Scan_Forward, push_boundary_list(scratch, boundary_token, boundary_non_whitespace));
-}
-
-CUSTOM_COMMAND_SIG(ryanb_move_up_to_blank_line) {
-    move_up_to_blank_line(app);
-    center_view(app);
-}
-
-CUSTOM_COMMAND_SIG(ryanb_open_panel_vsplit) {
-    open_panel_vsplit(app);
-    swap_panels(app);
-    change_active_panel(app);
-    interactive_switch_buffer(app);
-}
-
-CUSTOM_COMMAND_SIG(ryanb_page_down) {
-    page_down(app);
-    center_view(app);
-}
-
-CUSTOM_COMMAND_SIG(ryanb_page_up) {
-    page_up(app);
-    center_view(app);
-}
-
-CUSTOM_COMMAND_SIG(ryanb_rename_identifier) {
-    View_ID view = get_active_view(app, Access_ReadWriteVisible);
-    Buffer_ID buffer = view_get_buffer(app, view, Access_ReadWriteVisible);
-    if (buffer == 0) return;
-
-    Scratch_Block scratch(app);
-
-    i64 pos = view_get_cursor_pos(app, view);
-    Range_i64 range = enclose_pos_alpha_numeric_underscore(app, buffer, pos);
-    String_Const_u8 identifier = push_buffer_range(app, scratch, buffer, range);
-    if (identifier.size != 0) {
-        Query_Bar_Group group(app);
-
-        Query_Bar replace = { };
-        replace.prompt = string_u8_litexpr("Give a new name to ");
-        replace.string = identifier;
-
-        start_query_bar(app, &replace, 0);
-
-        u8 with_space[1024];
-
-        Query_Bar with = { };
-        with.prompt = string_u8_litexpr("Name: ");
-        with.string = SCu8(with_space, (u64)0);
-        with.string_capacity = sizeof(with_space);
-
-        if (query_user_string(app, &with)) {
-            global_history_edit_group_begin(app);
-
-            for (Buffer_ID next = get_buffer_next(app, 0, Access_ReadWriteVisible); next != 0; next = get_buffer_next(app, next, Access_ReadWriteVisible)) {
-                replace_in_range(app, next, buffer_range(app, buffer), replace.string, with.string);
-            }
-
-            global_history_edit_group_end(app);
-        }
-    }
-}
-
-CUSTOM_COMMAND_SIG(ryanb_search) {
-    Scratch_Block scratch(app);
-
-    View_ID view = get_active_view(app, Access_ReadVisible);
-    Buffer_ID buffer = view_get_buffer(app, view, Access_ReadVisible);
-    i64 buffer_size = buffer_get_size(app, buffer);
-
-    // get token under cursor
-    i64 pos_origin = view_get_cursor_pos(app, view);
-    Range_i64 range = enclose_pos_alpha_numeric_underscore(app, buffer, pos_origin);
-    String_Const_u8 query_init = push_buffer_range(app, scratch, buffer, range);
-
-    Query_Bar_Group group(app);
-    Query_Bar bar = {};
-    if (start_query_bar(app, &bar, 0) == 0) {
-        return;
-    }
-
-    Scan_Direction scan = Scan_Forward;
-    i64 pos = pos_origin;
-
-    u8 bar_string_space[256];
-    bar.string = SCu8(bar_string_space, query_init.size);
-    block_copy(bar.string.str, query_init.str, query_init.size);
-    bar.prompt = string_u8_litexpr("Search: ");
-
-    u64 match_size = bar.string.size;
-
-    User_Input in = { };
-    for (;;) {
-        isearch__update_highlight(app, view, Ii64_size(pos, match_size));
-        center_view(app);
-
-        in = get_next_input(app, EventPropertyGroup_AnyKeyboardEvent, EventProperty_Escape|EventProperty_ViewActivation);
-        if (in.abort) {
-            break;
-        }
-
-        String_Const_u8 string = to_writable(&in);
-
-        b32 string_change = false;
-
-        // allow paste
-        if (match_key_code(&in, KeyCode_V)) {
-            Input_Modifier_Set* mods = &in.event.key.modifiers;
-            if (has_modifier(mods, KeyCode_Control)) {
-                String_Const_u8 paste = push_clipboard_index(app, scratch, 0, 0);
-                if (paste.size > 0) {
-                    bar.string.size = 0;
-                    String_u8 bar_string = Su8(bar.string, sizeof(bar_string_space));
-                    string_append(&bar_string, paste);
-                    bar.string = bar_string.string;
-                    string_change = true;
-                }
-            }
-        }
-
-        if (string.str != 0 && string.size > 0) {
-            String_u8 bar_string = Su8(bar.string, sizeof(bar_string_space));
-            string_append(&bar_string, string);
-            bar.string = bar_string.string;
-            string_change = true;
-        }
-        else if (match_key_code(&in, KeyCode_Backspace)){
-            if (is_unmodified_key(&in.event)) {
-                u64 old_bar_string_size = bar.string.size;
-                bar.string = backspace_utf8(bar.string);
-                string_change = (bar.string.size < old_bar_string_size);
-            }
-            else if (has_modifier(&in.event.key.modifiers, KeyCode_Control)) {
-                if (bar.string.size > 0){
-                    bar.string.size = 0;
-                    string_change = true;
-                }
-            }
-        }
-
-        b32 do_scan_action = false;
-        Scan_Direction change_scan = scan;
-        if (!string_change) {
-            if (match_key_code(&in, KeyCode_Return) || match_key_code(&in, KeyCode_Tab)) {
-                Input_Modifier_Set* mods = &in.event.key.modifiers;
-                do_scan_action = true;
-
-                if (has_modifier(mods, KeyCode_Shift)) {
-                    change_scan = Scan_Backward;
-                }
-                else {
-                    change_scan = Scan_Forward;
-                }
-            }
-        }
-
-        if (string_change){
-            switch (scan){
-                case Scan_Forward: {
-                    i64 new_pos = 0;
-                    seek_string_insensitive_forward(app, buffer, pos - 1, 0, bar.string, &new_pos);
-                    if (new_pos < buffer_size){
-                        pos = new_pos;
-                        match_size = bar.string.size;
-                    }
-                }
-                break;
-
-                case Scan_Backward: {
-                    i64 new_pos = 0;
-                    seek_string_insensitive_backward(app, buffer, pos + 1, 0, bar.string, &new_pos);
-                    if (new_pos >= 0){
-                        pos = new_pos;
-                        match_size = bar.string.size;
-                    }
-                }
-                break;
-            }
-        }
-        else if (do_scan_action) {
-            scan = change_scan;
-            switch (scan){
-                case Scan_Forward: {
-                    i64 new_pos = 0;
-                    seek_string_insensitive_forward(app, buffer, pos, 0, bar.string, &new_pos);
-                    if (new_pos < buffer_size){
-                        pos = new_pos;
-                        match_size = bar.string.size;
-                    }
-                }
-                break;
-
-                case Scan_Backward: {
-                    i64 new_pos = 0;
-                    seek_string_insensitive_backward(app, buffer, pos, 0, bar.string, &new_pos);
-                    if (new_pos >= 0){
-                        pos = new_pos;
-                        match_size = bar.string.size;
-                    }
-                }
-                break;
-            }
-        }
-        else{
-            leave_current_input_unhandled(app);
-        }
-    }
-
-    view_disable_highlight_range(app, view);
-    view_set_cursor_and_preferred_x(app, view, seek_pos(pos));
-}
-
-/////////////////////////////////////////////////////////////////////////////
-// CUSTOM RENDER                                                           //
+// CUSTOM RENDERER                                                         //
 /////////////////////////////////////////////////////////////////////////////
 
 void ryanb_render_buffer(Application_Links *app, Frame_Info frame_info, View_ID view_id, b32 is_active_view, Face_ID face_id, Buffer_ID buffer, Text_Layout_ID text_layout_id, Rect_f32 rect) {
@@ -1518,7 +1599,8 @@ void setup_ryanb_mapping(Mapping* mapping, i64 global_id, i64 file_id, i64 code_
     Bind(swap_panels,                     KeyCode_Comma,  KeyCode_Control, KeyCode_Shift);              // ctrl + shift + ,       : swap panels
     Bind(ryanb_open_panel_vsplit,         KeyCode_Equal,  KeyCode_Control, KeyCode_Shift);              // ctrl + shift + +       : open split panel and open switch buffer prompt
     // TODO: move ryanb_goto_bookmark back down to code_id map once (if?) fuzzy hotkey matching is changed by Allen
-    Bind(ryanb_goto_bookmark,             KeyCode_Minus,  KeyCode_Control);                             // ctrl + -               : bookmark current position and go to last bookmarked location
+    Bind(ryanb_goto_bookmark_next,        KeyCode_Equal,  KeyCode_Control);                             // ctrl + =               : go to next bookmarked location
+    Bind(ryanb_goto_bookmark_prev,        KeyCode_Minus,  KeyCode_Control);                             // ctrl + -               : go to last bookmarked location
     Bind(close_panel,                     KeyCode_Minus,  KeyCode_Control, KeyCode_Shift);              // ctrl + shift + -       : close panel
     Bind(ryanb_kill_panel,                KeyCode_Minus,  KeyCode_Control, KeyCode_Shift, KeyCode_Alt); // ctrl + shift + alt + - : close file and panel
     Bind(build_in_build_panel,            KeyCode_B,      KeyCode_Control);                             // ctrl + b               : execute build in build panel
@@ -1592,7 +1674,7 @@ void setup_ryanb_mapping(Mapping* mapping, i64 global_id, i64 file_id, i64 code_
     Bind(word_complete,                   KeyCode_Tab);                                                       // tab                    : auto-complete current word
     Bind(comment_line_toggle,             KeyCode_ForwardSlash, KeyCode_Alt);                                 // alt  + /               : toggle line comment
     Bind(ryanb_goto_definition,           KeyCode_Return,       KeyCode_Control);                             // ctrl + enter           : bookmark current position and go to function or type definition for token under cursor
-    Bind(ryanb_goto_definition,           KeyCode_B,            KeyCode_Control, KeyCode_Shift, KeyCode_Alt); // ctrl + shift + alt + b : bookmark current position and go to function or type definition for token under cursor
+    Bind(ryanb_set_bookmark,              KeyCode_B,            KeyCode_Control, KeyCode_Shift, KeyCode_Alt); // ctrl + shift + alt + b : bookmark current position
     Bind(write_note,                      KeyCode_N,            KeyCode_Alt);                                 // alt  + t               : write a NOTE comment
     Bind(write_todo,                      KeyCode_T,            KeyCode_Alt);                                 // alt  + t               : write a TODO comment
     Bind(paste_and_indent,                KeyCode_V,            KeyCode_Control);                             // ctrl + v               : paste and indent
