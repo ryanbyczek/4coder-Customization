@@ -17,7 +17,6 @@ Features:
 * List All Locations initializes with token under cursor, supports paste from clipboard
 * Blinking cursor when in notepad-like mode
 * More informative File Bar with language, line-ending, spaces/tabs (eventually encoding type)
-* Automatic line-ending mode switching when saving per platform preference
 * Preview hex colors when cursor is on any hex color code value
 * Draw guide-lines from scope start to scope end when within scope (supports nested scopes)
 * Annotate scope end with scope start when within scope (supports nested scopes)
