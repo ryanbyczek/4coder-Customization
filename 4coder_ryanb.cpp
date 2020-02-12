@@ -13,12 +13,11 @@
 // resume state when opening 4coder (open documents, panels, cursor pos, etc)
 // better virtual whitespace for ternary operator
 // code folding (ctrol+m+o)
-// rename symbol (f2) --> match only on full word and case (using replace_in_all_buffers, query_replace_identifier)
+// rename symbol (F2) --> match only on full word and case (using replace_in_all_buffers, query_replace_identifier)
 // allow cursor to exist outside of view
 // spawn multiple cursors (ctrl+alt+down/up)
-// function prototype helper
-// type helper
-// double-click to select token
+// function prototype helper (F1)
+// type helper (F1)
 
 /////////////////////////////////////////////////////////////////////////////
 // TYPES                                                                   //
@@ -225,7 +224,7 @@ ryanb_string_find_first_non_whitespace(String_Const_u8 str) {
 BUFFER_HOOK_SIG(ryanb_file_save) {
     ProfileScope(app, "ryanb file save");
     b32 is_virtual = global_config.enable_virtual_whitespace;
-    if (global_config.automatically_indent_text_on_save && is_virtual){
+    if (global_config.automatically_indent_text_on_save && is_virtual) {
         auto_indent_buffer(app, buffer_id, buffer_range(app, buffer_id));
     }
 
@@ -246,7 +245,7 @@ BUFFER_HOOK_SIG(ryanb_file_save) {
     return (0);
 }
 
-BUFFER_HOOK_SIG(ryanb_new_file){
+BUFFER_HOOK_SIG(ryanb_new_file) {
     Scratch_Block scratch(app);
     String_Const_u8 file_name = push_buffer_base_name(app, scratch, buffer_id);
 
@@ -487,6 +486,27 @@ CUSTOM_COMMAND_SIG(ryanb_create_build_script) {
 }
 
 // hotkeys
+CUSTOM_COMMAND_SIG(ryanb_click_set_cursor_and_mark) {
+    View_ID view = get_active_view(app, Access_ReadVisible);
+    i64 cursor_pos = view_get_cursor_pos(app, view);
+
+    Mouse_State mouse = get_mouse_state(app);
+    i64 mouse_pos = view_pos_from_xy(app, view, V2f32(mouse.p));
+
+    if (cursor_pos != mouse_pos) {
+        view_set_cursor_and_preferred_x(app, view, seek_pos(mouse_pos));
+        view_set_mark(app, view, seek_pos(mouse_pos));
+
+    }
+    else {
+        Buffer_ID buffer = view_get_buffer(app, view, Access_ReadVisible);
+        Range_i64 range = enclose_pos_alpha_numeric_underscore(app, buffer, mouse_pos);
+        view_set_cursor_and_preferred_x(app, view, seek_pos(range.min));
+        no_mark_snap_to_cursor(app, view);
+        view_set_mark(app, view, seek_pos(range.max));
+    }
+}
+
 CUSTOM_COMMAND_SIG(ryanb_command_lister) {
     View_ID view = get_this_ctx_view(app, Access_Always);
     if (view == 0) return;
@@ -512,7 +532,7 @@ CUSTOM_COMMAND_SIG(ryanb_command_lister) {
 
 CUSTOM_COMMAND_SIG(ryanb_duplicate_line) {
     duplicate_line(app);
-    move_down(app);
+    move_down_textual(app);
 }
 
 CUSTOM_COMMAND_SIG(ryanb_set_bookmark) {
@@ -1692,6 +1712,8 @@ void setup_ryanb_mapping(Mapping* mapping, i64 global_id, i64 file_id, i64 code_
     // code file bindings
     SelectMap(code_id);
     ParentMap(file_id);
+
+    BindMouse(ryanb_click_set_cursor_and_mark, MouseCode_Left);
 
     BindTextInput(ryanb_write_text);
 
