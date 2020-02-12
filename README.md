@@ -14,14 +14,18 @@ Features:
 * Advance through bookmarks with ctrl++ or ctrl+-
 * Search initializes with token under cursor, supports paste from clipboard
 * Search advances with enter or tab, reverse with shift+enter or shift+tab
+* Search terminates on mouse-click
 * List All Locations initializes with token under cursor, supports paste from clipboard
 * Blinking cursor when in notepad-like mode
+* Apply open theme through F12 menu
 * More informative File Bar with language, line-ending, spaces/tabs (eventually encoding type)
+* Change line-ending mode of file through F12 menu
 * Preview hex colors when cursor is on any hex color code value
 * Draw guide-lines from scope start to scope end when within scope (supports nested scopes)
 * Annotate scope end with scope start when within scope (supports nested scopes)
 * Highlight braces at current scope when within scope (only current scope)
 * Configurable margin for line number gutter (line_number_margin value in 4coder_ryanb.cpp)
+* Generate .bat file through F12 menu
 * Extend token colorization to structs and functions (second color on defcolor_keyword in theme)
 * Extend token colorization to C++ operators (third color on defcolor_keyword in theme)
 * Extend token colorization to scope annotations (second color on defcolor_comment in theme)
