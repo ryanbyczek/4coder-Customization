@@ -18,6 +18,7 @@
 // spawn multiple cursors (ctrl+alt+down/up)
 // function prototype helper (F1)
 // type helper (F1)
+// double-click should detect faster (4coder limitation?)
 
 /////////////////////////////////////////////////////////////////////////////
 // TYPES                                                                   //
@@ -634,6 +635,11 @@ CUSTOM_COMMAND_SIG(ryanb_goto_definition) {
     }
 
     code_index_unlock();
+}
+
+CUSTOM_COMMAND_SIG(ryanb_click_goto_definition) {
+    click_set_cursor_and_mark(app);
+    ryanb_goto_definition(app);
 }
 
 CUSTOM_COMMAND_SIG(ryanb_goto_line) {
@@ -1713,7 +1719,8 @@ void setup_ryanb_mapping(Mapping* mapping, i64 global_id, i64 file_id, i64 code_
     SelectMap(code_id);
     ParentMap(file_id);
 
-    BindMouse(ryanb_click_set_cursor_and_mark, MouseCode_Left);
+    BindMouse(ryanb_click_set_cursor_and_mark, MouseCode_Left);                   // double-click: select token under cursor
+    BindMouse(ryanb_click_goto_definition,     MouseCode_Left,  KeyCode_Control); // ctrl+click  : move cursor and bookmark current position and go to function or type definition for token under cursor
 
     BindTextInput(ryanb_write_text);
 
@@ -1750,7 +1757,6 @@ void custom_layer_init(Application_Links* app) {
     set_custom_hook(app, HookID_NewFile, ryanb_new_file);
     set_custom_hook(app, HookID_SaveFile, ryanb_file_save);
     mapping_init(tctx, &framework_mapping);
-    //setup_default_mapping(&framework_mapping, mapid_global, mapid_file, mapid_code);
     setup_ryanb_mapping(&framework_mapping, mapid_global, mapid_file, mapid_code);
 }
 
