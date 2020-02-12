@@ -461,6 +461,20 @@ CUSTOM_COMMAND_SIG(ryanb_create_build_script) {
     }
 }
 
+CUSTOM_COMMAND_SIG(ryanb_set_line_endings_crlf) {
+    View_ID view = get_active_view(app, Access_ReadVisible);
+    Buffer_ID buffer = view_get_buffer(app, view, Access_ReadVisible);
+    rewrite_lines_to_crlf(app, buffer);
+    set_eol_mode_to_crlf(app);
+}
+
+CUSTOM_COMMAND_SIG(ryanb_set_line_endings_lf) {
+    View_ID view = get_active_view(app, Access_ReadVisible);
+    Buffer_ID buffer = view_get_buffer(app, view, Access_ReadVisible);
+    rewrite_lines_to_lf(app, buffer);
+    set_eol_mode_to_lf(app);
+}
+
 // hotkeys
 CUSTOM_COMMAND_SIG(ryanb_click_set_cursor_and_mark) {
     View_ID view = get_active_view(app, Access_ReadVisible);
@@ -494,7 +508,9 @@ CUSTOM_COMMAND_SIG(ryanb_command_lister) {
     lister->handlers = lister_get_default_handlers();
     
     lister_add_item(lister, string_u8_litexpr("apply theme from current buffer"), string_u8_litexpr(""), (void*)load_theme_current_buffer, 0);
-    lister_add_item(lister, string_u8_litexpr("create build script"), string_u8_litexpr(""), (void*)ryanb_create_build_script, 0);
+    lister_add_item(lister, string_u8_litexpr("change line endings to CRLF"),     string_u8_litexpr(""), (void*)ryanb_set_line_endings_crlf, 0);
+    lister_add_item(lister, string_u8_litexpr("change line endings to LF"),       string_u8_litexpr(""), (void*)ryanb_set_line_endings_lf, 0);
+    lister_add_item(lister, string_u8_litexpr("create build script"),             string_u8_litexpr(""), (void*)ryanb_create_build_script, 0);
     
     Lister_Result result = run_lister(app, lister);
     
@@ -844,7 +860,7 @@ CUSTOM_COMMAND_SIG(ryanb_search) {
         isearch__update_highlight(app, view, Ii64_size(pos, match_size));
         center_view(app);
         
-        in = get_next_input(app, EventPropertyGroup_AnyKeyboardEvent, EventProperty_Escape|EventProperty_ViewActivation);
+        in = get_next_input(app, EventPropertyGroup_AnyKeyboardEvent, EventProperty_Escape|EventProperty_ViewActivation|EventProperty_MouseButton);
         if (in.abort) {
             break;
         }
