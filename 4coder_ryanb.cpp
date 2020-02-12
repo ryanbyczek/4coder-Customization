@@ -1641,9 +1641,10 @@ void setup_ryanb_mapping(Mapping* mapping, i64 global_id, i64 file_id, i64 code_
     Bind(close_build_footer_panel,        KeyCode_Escape);                                              // esc                    : close open build panel
     Bind(change_active_panel,             KeyCode_Comma,  KeyCode_Control);                             // ctrl + ,               : switch active panel
     Bind(swap_panels,                     KeyCode_Comma,  KeyCode_Control, KeyCode_Shift);              // ctrl + shift + ,       : swap panels
-    Bind(ryanb_open_panel_vsplit,         KeyCode_Equal,  KeyCode_Control, KeyCode_Shift);              // ctrl + shift + +       : open split panel and open switch buffer prompt
-    // TODO: move ryanb_goto_bookmark back down to code_id map once (if?) fuzzy hotkey matching is changed by Allen
+    // TODO(ryanb): move ryanb_goto_bookmark_next back down to code_id map once (if?) fuzzy hotkey matching is changed by Allen
     Bind(ryanb_goto_bookmark_next,        KeyCode_Equal,  KeyCode_Control);                             // ctrl + =               : go to next bookmarked location
+    Bind(ryanb_open_panel_vsplit,         KeyCode_Equal,  KeyCode_Control, KeyCode_Shift);              // ctrl + shift + +       : open split panel and open switch buffer prompt
+    // TODO(ryanb): move ryanb_goto_bookmark_prev back down to code_id map once (if?) fuzzy hotkey matching is changed by Allen
     Bind(ryanb_goto_bookmark_prev,        KeyCode_Minus,  KeyCode_Control);                             // ctrl + -               : go to last bookmarked location
     Bind(close_panel,                     KeyCode_Minus,  KeyCode_Control, KeyCode_Shift);              // ctrl + shift + -       : close panel
     Bind(ryanb_kill_panel,                KeyCode_Minus,  KeyCode_Control, KeyCode_Shift, KeyCode_Alt); // ctrl + shift + alt + - : close file and panel
