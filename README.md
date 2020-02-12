@@ -8,6 +8,7 @@ My 4coder customization layer for 4coder 4.1.2+ (Beta)
 Many settings can be adjusted under the CONSTANTS section near the top of 4coder_ryanb.cpp
 
 Features:
+* Jump to function/struct definition with ctrl+enter or ctrl+click when cursor is on token
 * Double-click to select token (double-click slowly, or triple-click normally)
 * Bookmark cursor position when idle every 3 seconds, or manually with ctrl+shift+alt+b
 * Advance through bookmarks with ctrl++ or ctrl+-
@@ -15,7 +16,6 @@ Features:
 * Search advances with enter or tab, reverse with shift+enter or shift+tab
 * List All Locations initializes with token under cursor, supports paste from clipboard
 * Blinking cursor when in notepad-like mode
-* Jump to function/struct definition with ctrl+enter when cursor is on token
 * More informative File Bar with language, line-ending, spaces/tabs (eventually encoding type)
 * Automatic line-ending mode switching when saving per platform preference
 * Preview hex colors when cursor is on any hex color code value
