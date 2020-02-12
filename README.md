@@ -8,6 +8,7 @@ My 4coder customization layer for 4coder 4.1.2+ (Beta)
 Many settings can be adjusted under the CONSTANTS section near the top of 4coder_ryanb.cpp
 
 Features:
+* Double-click to select token
 * Bookmark cursor position when idle every 3 seconds, or manually with ctrl+shift+alt+b
 * Advance through bookmarks with ctrl++ or ctrl+-
 * Search initializes with token under cursor, supports paste from clipboard
