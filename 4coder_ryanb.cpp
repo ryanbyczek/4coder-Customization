@@ -9,15 +9,13 @@
 // hex color preview code from: https://gist.github.com/thevaber/58bb6a1c03ebe56309545f413e898a95
 
 // TODO(ryanb): features to add...
-// use: push_token_or_word_under_active_cursor for all of my token-under-cursor code
 // resume state when opening 4coder (open documents, panels, cursor pos, etc)
 // better virtual whitespace for ternary operator
 // code folding (ctrol+m+o)
 // rename symbol (F2) --> match only on full word and case (using replace_in_all_buffers, query_replace_identifier)
 // allow cursor to exist outside of view
 // spawn multiple cursors (ctrl+alt+down/up)
-// function prototype helper (F1)
-// type helper (F1)
+// type helper and function prototype helper (F1)
 // double-click should detect faster (4coder limitation?)
 
 /////////////////////////////////////////////////////////////////////////////
@@ -636,10 +634,6 @@ CUSTOM_COMMAND_SIG(ryanb_kill_to_end_of_line) {
 CUSTOM_COMMAND_SIG(ryanb_list_all_locations) {
     Scratch_Block scratch(app);
     
-    View_ID view = get_active_view(app, Access_ReadVisible);
-    Buffer_ID buffer = view_get_buffer(app, view, Access_ReadVisible);
-    i64 buffer_size = buffer_get_size(app, buffer);
-    
     String_Const_u8 query_init = push_token_or_word_under_active_cursor(app, scratch);
     
     Query_Bar_Group group(app);
@@ -704,7 +698,6 @@ CUSTOM_COMMAND_SIG(ryanb_list_all_locations) {
                     }
                 }
                 else if (is_unmodified_key(&in.event)) {
-                    u64 old_bar_string_size = bar.string.size;
                     bar.string = backspace_utf8(bar.string);
                 }
                 else if (has_modifier(&in.event.key.modifiers, KeyCode_Control)) {
@@ -745,10 +738,17 @@ CUSTOM_COMMAND_SIG(ryanb_move_up_to_blank_line) {
 }
 
 CUSTOM_COMMAND_SIG(ryanb_open_panel_vsplit) {
-    open_panel_vsplit(app);
-    swap_panels(app);
-    change_active_panel(app);
-    interactive_switch_buffer(app);
+    View_ID view = get_active_view(app, Access_Always);
+    View_ID next_view = get_next_view_looped_primary_panels(app, view, Access_Always);
+    
+    if (view == next_view) {
+        open_panel_vsplit(app);
+    }
+    else {
+        Buffer_ID buffer = view_get_buffer(app, view, Access_ReadVisible);
+        view_set_active(app, next_view);
+        view_set_buffer(app, next_view, buffer, 0);
+    }
 }
 
 CUSTOM_COMMAND_SIG(ryanb_page_down) {
