@@ -9,6 +9,7 @@
 // hex color preview code from: https://gist.github.com/thevaber/58bb6a1c03ebe56309545f413e898a95
 
 // TODO(ryanb): features to add...
+// use: push_token_or_word_under_active_cursor for all of my token-under-cursor code
 // resume state when opening 4coder (open documents, panels, cursor pos, etc)
 // better virtual whitespace for ternary operator
 // code folding (ctrol+m+o)
@@ -34,7 +35,7 @@ struct Bookmark {
 // CONSTANTS                                                               //
 /////////////////////////////////////////////////////////////////////////////
 
-#define RYANB_BOOKMARK_COUNT (256)
+#define RYANB_BOOKMARK_COUNT  (256)
 
 namespace {
     static const f32 auto_bookmark_seconds =  3.0f;  // number of seconds to wait until bookmarking the cursor position when the cursor isn't moving, default was 3.0f
@@ -220,44 +221,6 @@ ryanb_string_find_first_non_whitespace(String_Const_u8 str) {
 // CUSTOM COMMANDS                                                         //
 /////////////////////////////////////////////////////////////////////////////
 
-// hooks
-BUFFER_HOOK_SIG(ryanb_new_file) {
-    Scratch_Block scratch(app);
-    String_Const_u8 file_name = push_buffer_base_name(app, scratch, buffer_id);
-    
-    // skip non .h files
-    if (!string_match(string_postfix(file_name, 2), string_u8_litexpr(".h"))) {
-        return (0);
-    }
-    
-    // convert file_name to header guard string
-    String_Const_u8 guard = push_string_copy(scratch, file_name);
-    for (u64 i = 0; i < guard.size; ++i){
-        // lower to upper
-        if (guard.str[i] >= 'a' && guard.str[i] <= 'z') {
-            guard.str[i] -= ('a' - 'A');
-        }
-        // change . to _
-        else if (guard.str[i] == '.') {
-            guard.str[i] = '_';
-        }
-    }
-    
-    // insert header guards
-    Buffer_Insertion insert = begin_buffer_insertion_at_buffered(app, buffer_id, 0, scratch, KB(16));
-    insertf(&insert,
-            "#ifndef %.*s\n"
-            "#define %.*s\n"
-            "\n"
-            "#endif // %.*s\n",
-            string_expand(guard),
-            string_expand(guard),
-            string_expand(guard));
-    end_buffer_insertion(&insert);
-    
-    return (0);
-}
-
 // events
 CUSTOM_COMMAND_SIG(ryanb_startup) {
     ProfileScope(app, "ryanb startup");
@@ -396,8 +359,8 @@ CUSTOM_COMMAND_SIG(ryanb_create_build_script) {
         fprintf(bat_script, ":compiler_setup\n");
         fprintf(bat_script, "set COMPILERFLAGS=/diagnostics:column /EHa- /FC /fp:except- /fp:fast /Gm- /GR- /GS- /Gs9999999 /nologo /W4 /WX /Z7 /Zo\n");
         fprintf(bat_script, "if %%RELEASEBUILD%% equ 0 (\n");
-        fprintf(bat_script, "    set COMPILERFLAGSEXE=%%CompilerFlags%% /MTd /Od /DINTERNAL_BUILD\n");
-        fprintf(bat_script, "    set COMPILERFLAGSDLL=%%CompilerFlags%% /LDd /Od /DINTERNAL_BUILD\n");
+        fprintf(bat_script, "    set COMPILERFLAGSEXE=%%COMPILERFLAGS%% /MTd /Od /DINTERNAL_BUILD\n");
+        fprintf(bat_script, "    set COMPILERFLAGSDLL=%%COMPILERFLAGS%% /LDd /Od /DINTERNAL_BUILD\n");
         fprintf(bat_script, ")\n");
         fprintf(bat_script, "if %%RELEASEBUILD%% equ 1 (\n");
         fprintf(bat_script, "    set COMPILERFLAGSEXE=%%COMPILERFLAGS%% /MT /Oi /O2 /DRELEASE_BUILD\n");
@@ -600,31 +563,28 @@ CUSTOM_COMMAND_SIG(ryanb_goto_definition) {
     Scratch_Block scratch(app);
     
     View_ID view = get_active_view(app, Access_ReadVisible);
-    Buffer_ID buffer_id = view_get_buffer(app, view, Access_ReadVisible);
     
-    i64 pos = view_get_cursor_pos(app, view);
-    Range_i64 range = enclose_pos_alpha_numeric_underscore(app, buffer_id, pos);
-    String_Const_u8 query = push_buffer_range(app, scratch, buffer_id, range);
+    String_Const_u8 query = push_token_or_word_under_active_cursor(app, scratch);
     
     code_index_lock();
-    
-    for (Buffer_ID buffer = get_buffer_next(app, 0, Access_Always); buffer != 0; buffer = get_buffer_next(app, buffer, Access_Always)) {
-        Code_Index_File* file = code_index_get_file(buffer);
-        if (file == 0) continue;
-        
-        for (i32 i = 0; i < file->note_array.count; ++i) {
-            Code_Index_Note* note = file->note_array.ptrs[i];
-            if (string_match(note->text, query)) {
-                ryanb_set_bookmark(app);
-                switch_to_existing_view(app, view, buffer);
-                set_view_to_location(app, view, buffer, seek_pos(note->pos.first));
-                center_view(app);
-                ryanb_set_bookmark(app);
-                break;
+    {
+        for (Buffer_ID buffer = get_buffer_next(app, 0, Access_Always); buffer != 0; buffer = get_buffer_next(app, buffer, Access_Always)) {
+            Code_Index_File* file = code_index_get_file(buffer);
+            if (file == 0) continue;
+            
+            for (i32 i = 0; i < file->note_array.count; ++i) {
+                Code_Index_Note* note = file->note_array.ptrs[i];
+                if (string_match(note->text, query)) {
+                    ryanb_set_bookmark(app);
+                    switch_to_existing_view(app, view, buffer);
+                    set_view_to_location(app, view, buffer, seek_pos(note->pos.first));
+                    center_view(app);
+                    ryanb_set_bookmark(app);
+                    break;
+                }
             }
         }
     }
-    
     code_index_unlock();
 }
 
@@ -667,9 +627,7 @@ CUSTOM_COMMAND_SIG(ryanb_list_all_locations) {
     Buffer_ID buffer = view_get_buffer(app, view, Access_ReadVisible);
     i64 buffer_size = buffer_get_size(app, buffer);
     
-    i64 pos = view_get_cursor_pos(app, view);
-    Range_i64 range = enclose_pos_alpha_numeric_underscore(app, buffer, pos);
-    String_Const_u8 query_init = push_buffer_range(app, scratch, buffer, range);
+    String_Const_u8 query_init = push_token_or_word_under_active_cursor(app, scratch);
     
     Query_Bar_Group group(app);
     Query_Bar bar = {};
@@ -797,9 +755,7 @@ CUSTOM_COMMAND_SIG(ryanb_rename_identifier) {
     
     Scratch_Block scratch(app);
     
-    i64 pos = view_get_cursor_pos(app, view);
-    Range_i64 range = enclose_pos_alpha_numeric_underscore(app, buffer, pos);
-    String_Const_u8 identifier = push_buffer_range(app, scratch, buffer, range);
+    String_Const_u8 identifier = push_token_or_word_under_active_cursor(app, scratch);
     if (identifier.size != 0) {
         Query_Bar_Group group(app);
         
@@ -836,8 +792,7 @@ CUSTOM_COMMAND_SIG(ryanb_search) {
     i64 buffer_size = buffer_get_size(app, buffer);
     
     i64 pos = view_get_cursor_pos(app, view);
-    Range_i64 range = enclose_pos_alpha_numeric_underscore(app, buffer, pos);
-    String_Const_u8 query_init = push_buffer_range(app, scratch, buffer, range);
+    String_Const_u8 query_init = push_token_or_word_under_active_cursor(app, scratch);
     
     Scan_Direction scan = Scan_Forward;
     
@@ -1529,7 +1484,7 @@ void ryanb_render_buffer(Application_Links *app, Frame_Info frame_info, View_ID 
         break;
     }
     
-    // NOTE(allen): put the actual text on the actual screen
+    // NOTE(allen): Put the actual text on the actual screen
     draw_text_layout_default(app, text_layout_id);
     ryanb_draw_scope_annotations(app, buffer, text_layout_id, face_id, metrics, cursor_pos, rect);
     
@@ -1746,7 +1701,6 @@ void custom_layer_init(Application_Links* app) {
     
     set_all_default_hooks(app);
     set_custom_hook(app, HookID_RenderCaller, ryanb_render_caller);
-    set_custom_hook(app, HookID_NewFile, ryanb_new_file);
     mapping_init(tctx, &framework_mapping);
     setup_ryanb_mapping(&framework_mapping, mapid_global, mapid_file, mapid_code);
 }
