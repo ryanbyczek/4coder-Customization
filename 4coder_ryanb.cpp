@@ -308,6 +308,19 @@ CUSTOM_COMMAND_SIG(ryanb_write_text) {
     view_set_cursor_and_preferred_x(app, view, seek_pos(pos + 1));
 }
 
+CUSTOM_COMMAND_SIG(ryanb_load_theme_current_buffer) {
+    Scratch_Block scratch(app);
+    
+    View_ID view = get_active_view(app, Access_ReadVisible);
+    Buffer_ID buffer = view_get_buffer(app, view, Access_ReadVisible);
+    String_Const_u8 file_name = push_buffer_unique_name(app, scratch, buffer);
+    
+    String_Const_u8 fcoder_extension = string_u8_litexpr(".4coder");
+    if (string_match(string_postfix(file_name, fcoder_extension.size), fcoder_extension)) {
+        load_theme_current_buffer(app);
+    }
+}
+
 CUSTOM_COMMAND_SIG(ryanb_create_build_script) {
     FILE* bat_script = fopen("build.bat", "wb");
     if (bat_script != 0) {
@@ -470,7 +483,7 @@ CUSTOM_COMMAND_SIG(ryanb_command_lister) {
     lister_set_query(lister, string_u8_litexpr("Select a command..."));
     lister->handlers = lister_get_default_handlers();
     
-    lister_add_item(lister, string_u8_litexpr("apply theme from current buffer"), string_u8_litexpr(""), (void*)load_theme_current_buffer, 0);
+    lister_add_item(lister, string_u8_litexpr("apply theme from current buffer"), string_u8_litexpr(""), (void*)ryanb_load_theme_current_buffer, 0);
     lister_add_item(lister, string_u8_litexpr("change line endings to CRLF"),     string_u8_litexpr(""), (void*)ryanb_set_line_endings_crlf, 0);
     lister_add_item(lister, string_u8_litexpr("change line endings to LF"),       string_u8_litexpr(""), (void*)ryanb_set_line_endings_lf, 0);
     lister_add_item(lister, string_u8_litexpr("create build script"),             string_u8_litexpr(""), (void*)ryanb_create_build_script, 0);
