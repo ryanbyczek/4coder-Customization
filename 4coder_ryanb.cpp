@@ -1,9 +1,6 @@
 #include "4coder_default_include.cpp"
 #include "generated/managed_id_metadata.cpp"
 
-#pragma warning(push)
-#pragma warning(disable:4189) // local variable is initialized but not referenced
-
 // scope lines/brace highlight/scope annotation code and bat from: https://github.com/ryanfleury/4coder_fleury
 // struct/function highlight code from: https://github.com/Skytrias/4files
 // hex color preview code from: https://gist.github.com/thevaber/58bb6a1c03ebe56309545f413e898a95
@@ -211,7 +208,7 @@ ryanb_layout_line_number_margin(Application_Links* app, Buffer_ID buffer, Rect_f
 function u64
 ryanb_string_find_first_non_whitespace(String_Const_u8 str) {
     u64 i = 0;
-    for (i; i < str.size && str.str[i] <= 32; ++i);
+    for (i; (i < str.size) && (str.str[i] <= 32); ++i);
     return (i);
 }
 
@@ -228,7 +225,7 @@ CUSTOM_COMMAND_SIG(ryanb_startup) {
         load_themes_default_folder(app);
         default_4coder_initialize(app, file_names);
         default_4coder_side_by_side_panels(app, file_names);
-        if (global_config.automatically_load_project){
+        if (global_config.automatically_load_project) {
             load_project(app);
         }
     }
@@ -320,7 +317,12 @@ CUSTOM_COMMAND_SIG(ryanb_load_theme_current_buffer) {
 }
 
 CUSTOM_COMMAND_SIG(ryanb_create_build_script) {
-    FILE* bat_script = fopen("build.bat", "wb");
+    Scratch_Block scratch(app);
+    
+    String_Const_u8 script_path = push_hot_directory(app, scratch);
+    String_Const_u8 bat_file_name = push_u8_stringf(scratch, "%.*s/build.bat", string_expand(script_path));
+    
+    FILE* bat_script = fopen((char*)bat_file_name.str, "wb");
     if (bat_script != 0) {
         fprintf(bat_script, "@echo off\n");
         fprintf(bat_script, "\n");
@@ -474,6 +476,7 @@ CUSTOM_COMMAND_SIG(ryanb_click_set_cursor_and_mark) {
 CUSTOM_COMMAND_SIG(ryanb_command_lister) {
     View_ID view = get_this_ctx_view(app, Access_Always);
     if (view == 0) return;
+    Buffer_ID buffer = buffer = view_get_buffer(app, view, Access_ReadVisible);
     
     Scratch_Block scratch(app, Scratch_Share);
     
@@ -481,10 +484,46 @@ CUSTOM_COMMAND_SIG(ryanb_command_lister) {
     lister_set_query(lister, string_u8_litexpr("Select a command..."));
     lister->handlers = lister_get_default_handlers();
     
-    lister_add_item(lister, string_u8_litexpr("apply theme from current buffer"), string_u8_litexpr(""), (void*)ryanb_load_theme_current_buffer, 0);
-    lister_add_item(lister, string_u8_litexpr("change line endings to CRLF"),     string_u8_litexpr(""), (void*)ryanb_set_line_endings_crlf, 0);
-    lister_add_item(lister, string_u8_litexpr("change line endings to LF"),       string_u8_litexpr(""), (void*)ryanb_set_line_endings_lf, 0);
-    lister_add_item(lister, string_u8_litexpr("create build script"),             string_u8_litexpr(""), (void*)ryanb_create_build_script, 0);
+    
+    // apply theme
+    {
+        String_Const_u8 fcoder_extension = string_u8_litexpr(".4coder");
+        String_Const_u8 file_name = push_buffer_unique_name(app, scratch, buffer);
+        if (string_match(string_postfix(file_name, fcoder_extension.size), fcoder_extension)) {
+            lister_add_item(lister, string_u8_litexpr("apply theme"), file_name, (void*)ryanb_load_theme_current_buffer, 0);
+        }
+    }
+    
+    // create build script
+    {
+        String_Const_u8 hot_directory = push_hot_directory(app, scratch);
+        lister_add_item(lister, string_u8_litexpr("create build script"), hot_directory, (void*)ryanb_create_build_script, 0);
+    }
+    
+    // change line endings
+    {
+        Managed_Scope scope = buffer_get_managed_scope(app, buffer);
+        Line_Ending_Kind* eol_setting = scope_attachment(app, scope, buffer_eol_setting, Line_Ending_Kind);
+        switch (*eol_setting) {
+            case LineEndingKind_Binary: {
+                lister_add_item(lister, string_u8_litexpr("change line endings to CRLF"), string_u8_litexpr(""), (void*)ryanb_set_line_endings_crlf, 0);
+                lister_add_item(lister, string_u8_litexpr("change line endings to LF"),   string_u8_litexpr(""), (void*)ryanb_set_line_endings_lf, 0);
+            }
+            break;
+            
+            case LineEndingKind_LF: {
+                lister_add_item(lister, string_u8_litexpr("change line endings to CRLF"), string_u8_litexpr(""), (void*)ryanb_set_line_endings_crlf, 0);
+            }
+            break;
+            
+            case LineEndingKind_CRLF: {
+                lister_add_item(lister, string_u8_litexpr("change line endings to LF"), string_u8_litexpr(""), (void*)ryanb_set_line_endings_lf, 0);
+            }
+            break;
+        }
+        
+        
+    }
     
     Lister_Result result = run_lister(app, lister);
     
@@ -1717,5 +1756,3 @@ void custom_layer_init(Application_Links* app) {
     mapping_init(tctx, &framework_mapping);
     setup_ryanb_mapping(&framework_mapping, mapid_global, mapid_file, mapid_code);
 }
-
-#pragma warning(pop)
