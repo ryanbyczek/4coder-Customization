@@ -6,6 +6,7 @@
 // hex color preview code from: https://gist.github.com/thevaber/58bb6a1c03ebe56309545f413e898a95
 
 // TODO(ryanb): features to add...
+// replace menu should support paste
 // resume state when opening 4coder (open documents, panels, cursor pos, etc)
 // better virtual whitespace for ternary operator
 // code folding (ctrol+m+o)
@@ -30,10 +31,11 @@ struct Bookmark {
 // CONSTANTS                                                               //
 /////////////////////////////////////////////////////////////////////////////
 
-#define RYANB_BOOKMARK_COUNT  (256)
+#define RYANB_BOOKMARK_COUNT (256)
 
 namespace {
-    static const f32 auto_bookmark_seconds =  3.0f;  // number of seconds to wait until bookmarking the cursor position when the cursor isn't moving, default was 3.0f
+    static const f32 bookmark_auto_seconds =  3.0f;  // number of seconds to wait until bookmarking the cursor position when the cursor isn't moving, default was 3.0f
+    static const f32 build_buffer_height   =  0.33f; // percentage of the sceen height to use when opening the compilation buffer, default was 14 text-lines tall
     static const f32 cursor_roundness      =  0.45f; // roundness of cursor highlight, default was 0.45f
     static const f32 cursor_thickness      =  3.0f;  // thickness of cursor when in notepad style mode, default was 1.0f
     static const f32 cursor_fade_time      =  0.7f;  // time in seconds it takes to fade the cursor out
@@ -47,7 +49,7 @@ namespace {
 /////////////////////////////////////////////////////////////////////////////
 
 namespace {
-    f32 auto_bookmark_time_remaining = auto_bookmark_seconds;
+    f32 auto_bookmark_time_remaining = bookmark_auto_seconds;
     i64 bookmark_cursor = 0;
     Bookmark bookmarks[RYANB_BOOKMARK_COUNT] = { };
 }
@@ -452,6 +454,35 @@ CUSTOM_COMMAND_SIG(ryanb_set_line_endings_lf) {
 }
 
 // hotkeys
+CUSTOM_COMMAND_SIG(ryanb_build_in_build_panel) {
+    View_ID view = get_active_view(app, Access_Always);
+    Buffer_ID buffer = view_get_buffer(app, view, Access_Always);
+    
+    
+    View_ID build_view = 0;
+    Buffer_ID build_buffer = get_comp_buffer(app);
+    if (build_buffer != 0) {
+        build_view = get_first_view_with_buffer(app, build_buffer);
+    }
+    if (build_view == 0) {
+        if (build_footer_panel_view_id == 0) {
+            build_footer_panel_view_id = open_view(app, view, ViewSplit_Bottom);
+            new_view_settings(app, build_footer_panel_view_id);
+            view_set_split(app, build_footer_panel_view_id, ViewSplitKind_Ratio, build_buffer_height);
+            view_set_passive(app, build_footer_panel_view_id, true);
+        }
+        build_view = build_footer_panel_view_id;
+    }
+    
+    standard_search_and_build(app, build_view, buffer);
+    set_fancy_compilation_buffer_font(app);
+    
+    block_zero_struct(&prev_location);
+    lock_jump_buffer(app, string_u8_litexpr("*compilation*"));
+    
+    view_set_active(app, build_view);
+}
+
 CUSTOM_COMMAND_SIG(ryanb_click_set_cursor_and_mark) {
     View_ID view = get_active_view(app, Access_ReadVisible);
     i64 cursor_pos = view_get_cursor_pos(app, view);
@@ -1340,10 +1371,10 @@ ryanb_draw_notepad_style_cursor_highlight(Application_Links* app, Frame_Info fra
             
             auto_bookmark_time_remaining -= frame_info.literal_dt;
             if (last_cursor_pos != cursor_pos) {
-                auto_bookmark_time_remaining = auto_bookmark_seconds;
+                auto_bookmark_time_remaining = bookmark_auto_seconds;
             }
             if (auto_bookmark_time_remaining <= 0.0f) {
-                auto_bookmark_time_remaining = auto_bookmark_seconds;
+                auto_bookmark_time_remaining = bookmark_auto_seconds;
                 ryanb_set_bookmark(app);
             }
             
@@ -1655,7 +1686,7 @@ void setup_ryanb_mapping(Mapping* mapping, i64 global_id, i64 file_id, i64 code_
     Bind(ryanb_goto_bookmark_prev,        KeyCode_Minus,  KeyCode_Control);                             // ctrl + -               : go to last bookmarked location
     Bind(close_panel,                     KeyCode_Minus,  KeyCode_Control, KeyCode_Shift);              // ctrl + shift + -       : close panel
     Bind(ryanb_kill_panel,                KeyCode_Minus,  KeyCode_Control, KeyCode_Shift, KeyCode_Alt); // ctrl + shift + alt + - : close file and panel
-    Bind(build_in_build_panel,            KeyCode_B,      KeyCode_Control);                             // ctrl + b               : execute build in build panel
+    Bind(ryanb_build_in_build_panel,      KeyCode_B,      KeyCode_Control);                             // ctrl + b               : execute build in build panel
     Bind(interactive_new,                 KeyCode_N,      KeyCode_Control);                             // ctrl + n               : open new file prompt
     Bind(interactive_open,                KeyCode_O,      KeyCode_Control);                             // ctrl + o               : open existing file prompt
     Bind(ryanb_interactive_open_all_code, KeyCode_O,      KeyCode_Control, KeyCode_Shift);              // ctrl + shift + o       : open existing file prompt and open all code near that file
