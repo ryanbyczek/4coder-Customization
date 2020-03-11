@@ -1,5 +1,5 @@
 # 4coder Customization
-My 4coder customization layer for 4coder 4.1.2+ (Beta)
+My 4coder customization layer for 4coder 4.1.4+ (Beta)
 
 * 4coder_ryanb.cpp and 4coder_ryanb_build.bat go in: 4coder\custom
 * theme-ryanb.4coder (optional) goes in: 4coder\themes
