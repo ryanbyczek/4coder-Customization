@@ -13,7 +13,7 @@ defcolor_margin_hover = 0xFFFF0000;
 defcolor_margin_active = defcolor_bar;
 
 defcolor_list_item = defcolor_back;
-defcolor_list_item_hover = 0xFF77777A;
+defcolor_list_item_hover = 0xFF202020;
 defcolor_list_item_active = 0xFF555559;
 
 defcolor_cursor = defcolor_text_default;
