@@ -1030,6 +1030,8 @@ CUSTOM_COMMAND_SIG(ryanb_search) {
         
         in = get_next_input(app, EventPropertyGroup_AnyKeyboardEvent, EventProperty_Escape|EventProperty_ViewActivation|EventProperty_MouseButton);
         if (in.abort) {
+            i64 cursor_pos = view_get_cursor_pos(app, view);
+            view_set_mark(app, view, seek_pos(cursor_pos));
             break;
         }
         
