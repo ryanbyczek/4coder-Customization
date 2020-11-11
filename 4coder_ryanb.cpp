@@ -8,15 +8,6 @@
 // NOTE(ryanb): changes in other files...
 // 4coder_draw.cpp -> layout_line_number_margin changed to make fixed-width gutter
 
-// NOTE(ryanb): recently added...
-// right-aligned line number column
-// only draw inner-most scope annotation
-// don't draw annotation if cursor is on same line as source of annotation (generally for array initializers)
-
-// NOTE(ryanb): recently removed...
-// remove ryanb_write_text for bracket auto-complete
-// revert ryanb_load_theme_current_buffer to default since it has built-in protection now
-
 // TODO(ryanb): features to add...
 // update build script to match my new one
 // when cursor rests on a token, highlight all matching tokens within scope
@@ -30,6 +21,13 @@
 // spawn multiple cursors (ctrl+alt+down/up)
 // type helper
 // double-click should detect faster (4coder limitation?)
+
+
+void set_mark_to_cursor(Application_Links* app){
+    View_ID view = get_active_view(app, Access_ReadVisible);
+    i64 cursor_pos = view_get_cursor_pos(app, view);
+    view_set_mark(app, view, seek_pos(cursor_pos));
+}
 
 function void
 ryanb_draw_tooltip(Application_Links *app, Rect_f32 rect) {
@@ -672,7 +670,7 @@ CUSTOM_COMMAND_SIG(ryanb_command_lister) {
     if (view == 0) return;
     Buffer_ID buffer = buffer = view_get_buffer(app, view, Access_ReadVisible);
     
-    Scratch_Block scratch(app, Scratch_Share);
+    Scratch_Block scratch(app);
     
     Lister_Block lister(app, scratch);
     lister_set_query(lister, string_u8_litexpr("Select a command..."));
@@ -790,11 +788,6 @@ CUSTOM_COMMAND_SIG(ryanb_goto_bookmark_prev) {
     }
 }
 
-CUSTOM_COMMAND_SIG(ryanb_goto_end_of_file) {
-    goto_end_of_file(app);
-    center_view(app);
-}
-
 CUSTOM_COMMAND_SIG(ryanb_goto_definition) {
     Scratch_Block scratch(app);
     
@@ -832,6 +825,7 @@ CUSTOM_COMMAND_SIG(ryanb_click_goto_definition) {
 CUSTOM_COMMAND_SIG(ryanb_goto_line) {
     goto_line(app);
     center_view(app);
+    set_mark_to_cursor(app);
 }
 
 CUSTOM_COMMAND_SIG(ryanb_interactive_open_all_code) {
@@ -931,11 +925,6 @@ CUSTOM_COMMAND_SIG(ryanb_list_all_locations) {
     }
 }
 
-CUSTOM_COMMAND_SIG(ryanb_move_down_to_blank_line) {
-    move_down_to_blank_line(app);
-    center_view(app);
-}
-
 CUSTOM_COMMAND_SIG(ryanb_move_left_token_boundary) {
     Scratch_Block scratch(app);
     current_view_scan_move(app, Scan_Backward, push_boundary_list(scratch, boundary_token, boundary_non_whitespace));
@@ -944,11 +933,6 @@ CUSTOM_COMMAND_SIG(ryanb_move_left_token_boundary) {
 CUSTOM_COMMAND_SIG(ryanb_move_right_token_boundary) {
     Scratch_Block scratch(app);
     current_view_scan_move(app, Scan_Forward, push_boundary_list(scratch, boundary_token, boundary_non_whitespace));
-}
-
-CUSTOM_COMMAND_SIG(ryanb_move_up_to_blank_line) {
-    move_up_to_blank_line(app);
-    center_view(app);
 }
 
 CUSTOM_COMMAND_SIG(ryanb_open_panel_vsplit) {
@@ -968,11 +952,13 @@ CUSTOM_COMMAND_SIG(ryanb_open_panel_vsplit) {
 CUSTOM_COMMAND_SIG(ryanb_page_down) {
     page_down(app);
     center_view(app);
+    set_mark_to_cursor(app);
 }
 
 CUSTOM_COMMAND_SIG(ryanb_page_up) {
     page_up(app);
     center_view(app);
+    set_mark_to_cursor(app);
 }
 
 CUSTOM_COMMAND_SIG(ryanb_rename_identifier) {
@@ -1182,7 +1168,7 @@ CUSTOM_COMMAND_SIG(ryanb_toggle_function_helper) {
 
 function void
 ryanb_draw_line_number_margin(Application_Links *app, View_ID view_id, Buffer_ID buffer, Face_ID face_id, Text_Layout_ID text_layout_id, Rect_f32 margin){
-    Scratch_Block scratch(app, Scratch_Share);
+    Scratch_Block scratch(app);
     
     Rect_f32 prev_clip = draw_set_clip(app, margin);
     draw_rectangle_fcolor(app, margin, 0.f, fcolor_id(defcolor_line_numbers_back));
@@ -1898,17 +1884,17 @@ void setup_ryanb_mapping(Mapping* mapping, i64 global_id, i64 file_id, i64 code_
     Bind(delete_char,                     KeyCode_Delete);                                 // del              : delete next character
     Bind(delete_line,                     KeyCode_Delete, KeyCode_Shift);                  // shift + del      : delete line
     Bind(seek_end_of_line,                KeyCode_End);                                    // end              : seek line end
-    Bind(ryanb_goto_end_of_file,          KeyCode_End,    KeyCode_Control);                // ctrl + end       : seek bottom of file
+    Bind(goto_end_of_file,                KeyCode_End,    KeyCode_Control);                // ctrl + end       : seek bottom of file
     Bind(seek_beginning_of_line,          KeyCode_Home);                                   // home             : seek line start
     Bind(goto_beginning_of_file,          KeyCode_Home,   KeyCode_Control);                // ctrl + home      : seek top of file and
     Bind(ryanb_page_down,                 KeyCode_PageDown);                               // page down        : page down and center view
     Bind(ryanb_page_up,                   KeyCode_PageUp);                                 // page up          : page up and center view
     Bind(move_up,                         KeyCode_Up);                                     // up               : seek line up
     Bind(move_line_up,                    KeyCode_Up,     KeyCode_Alt);                    // alt  + up        : move line up
-    Bind(ryanb_move_up_to_blank_line,     KeyCode_Up,     KeyCode_Control);                // ctrl + up        : seek whitespace up and center view
+    Bind(move_up_to_blank_line,           KeyCode_Up,     KeyCode_Control);                // ctrl + up        : seek whitespace up and center view
     Bind(move_down,                       KeyCode_Down);                                   // down             : seek line down
     Bind(move_line_down,                  KeyCode_Down,   KeyCode_Alt);                    // alt  + down      : move line down
-    Bind(ryanb_move_down_to_blank_line,   KeyCode_Down,   KeyCode_Control);                // ctrl + down      : seek whitespace down and center view
+    Bind(move_down_to_blank_line,         KeyCode_Down,   KeyCode_Control);                // ctrl + down      : seek whitespace down and center view
     Bind(move_left,                       KeyCode_Left);                                   // left             : seek character left
     Bind(ryanb_move_left_token_boundary,  KeyCode_Left,   KeyCode_Control);                // ctrl + left      : seek token left
     Bind(move_right,                      KeyCode_Right);                                  // right            : seek character right
