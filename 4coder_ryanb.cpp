@@ -23,12 +23,6 @@
 // double-click should detect faster (4coder limitation?)
 
 
-void set_mark_to_cursor(Application_Links* app){
-    View_ID view = get_active_view(app, Access_ReadVisible);
-    i64 cursor_pos = view_get_cursor_pos(app, view);
-    view_set_mark(app, view, seek_pos(cursor_pos));
-}
-
 function void
 ryanb_draw_tooltip(Application_Links *app, Rect_f32 rect) {
     View_ID view = get_active_view(app, Access_ReadVisible);
@@ -273,7 +267,7 @@ struct Bookmark {
 /////////////////////////////////////////////////////////////////////////////
 
 namespace {
-    static const u32 bookmark_max_count      = 256;
+    static const u32 bookmark_max_count      = 256;   // maximum number of bookmarks to keep track of
     static const f32 bookmark_auto_seconds   = 3.0f;  // number of seconds to wait until bookmarking the cursor position when the cursor isn't moving, default was 3.0f
     static const f32 build_buffer_height     = 0.33f; // percentage of the sceen height to use when opening the compilation buffer, default was 14 text-lines tall
     static const f32 cursor_fade_time        = 0.7f;  // time in seconds it takes to fade the cursor out
@@ -322,7 +316,10 @@ ryanb_is_cursor_at_bookmark(Application_Links* app) {
     
     Bookmark* bookmark = &bookmarks[bookmark_cursor];
     
-    return (bookmark->is_valid && bookmark->view == view && bookmark->buffer == buffer && bookmark->pos == pos);
+    return (bookmark->is_valid && 
+            bookmark->view == view && 
+            bookmark->buffer == buffer &&
+            bookmark->pos == pos);
 }
 
 function u32
@@ -468,147 +465,72 @@ CUSTOM_COMMAND_SIG(ryanb_startup) {
     system_set_fullscreen(true);
 }
 
-CUSTOM_COMMAND_SIG(ryanb_create_build_script) {
-    Scratch_Block scratch(app);
-    
-    String_Const_u8 script_path = push_hot_directory(app, scratch);
-    String_Const_u8 bat_file_name = push_u8_stringf(scratch, "%.*s/build.bat", string_expand(script_path));
-    
-    FILE* bat_script = fopen((char*)bat_file_name.str, "wb");
-    if (bat_script != 0) {
-        fprintf(bat_script, "@echo off\n");
-        fprintf(bat_script, "\n");
-        
-        fprintf(bat_script, ":options\n");
-        fprintf(bat_script, "set RELEASEBUILD=0\n");
-        fprintf(bat_script, "\n");
-        
-        fprintf(bat_script, ":win32\n");
-        fprintf(bat_script, "echo [WINDOWS]\n");
-        fprintf(bat_script, "if %%RELEASEBUILD%% equ 1 echo Release Build\n");
-        fprintf(bat_script, "if %%RELEASEBUILD%% neq 1 echo Internal Build\n");
-        fprintf(bat_script, "echo.\n");
-        fprintf(bat_script, "\n");
-        
-        fprintf(bat_script, "where /q cl\n");
-        fprintf(bat_script, "if %%ERRORLEVEL%% equ 0 goto compiler_setup\n");
-        fprintf(bat_script, "\n");
-        
-        fprintf(bat_script, ":msvc\n");
-        fprintf(bat_script, "echo [MSVC]\n");
-        fprintf(bat_script, "echo finding vcvarsall.bat...\n");
-        fprintf(bat_script, "set VCVARS=C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Enterprise\\VC\\Auxiliary\\Build\\vcvarsall.bat\n");
-        fprintf(bat_script, "if exist \"%%VCVARS%%\" goto vc_vars_found\n");
-        fprintf(bat_script, "set VCVARS=C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Professional\\VC\\Auxiliary\\Build\\vcvarsall.bat\n");
-        fprintf(bat_script, "if exist \"%%VCVARS%%\" goto vc_vars_found\n");
-        fprintf(bat_script, "set VCVARS=C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\\Auxiliary\\Build\\vcvarsall.bat\n");
-        fprintf(bat_script, "if exist \"%%VCVARS%%\" goto vc_vars_found\n");
-        fprintf(bat_script, "set VCVARS=C:\\Program Files (x86)\\Microsoft Visual Studio\\2017\\Enterprise\\VC\\Auxiliary\\Build\\vcvarsall.bat\n");
-        fprintf(bat_script, "if exist \"%%VCVARS%%\" goto vc_vars_found\n");
-        fprintf(bat_script, "set VCVARS=C:\\Program Files (x86)\\Microsoft Visual Studio\\2017\\Professional\\VC\\Auxiliary\\Build\\vcvarsall.bat\n");
-        fprintf(bat_script, "if exist \"%%VCVARS%%\" goto vc_vars_found\n");
-        fprintf(bat_script, "set VCVARS=C:\\Program Files (x86)\\Microsoft Visual Studio\\2017\\Community\\VC\\Auxiliary\\Build\\vcvarsall.bat\n");
-        fprintf(bat_script, "if exist \"%%VCVARS%%\" goto vc_vars_found\n");
-        fprintf(bat_script, "\n");
-        
-        fprintf(bat_script, "echo unable to find vcvarsall.bat\n");
-        fprintf(bat_script, "goto error\n");
-        fprintf(bat_script, "\n");
-        
-        fprintf(bat_script, ":vc_vars_found\n");
-        fprintf(bat_script, "echo found vcvarsall.bat: \"%%VCVARS%%\"\n");
-        fprintf(bat_script, "call \"%%VCVARS%%\" x64 > NUL\n");
-        fprintf(bat_script, "echo.\n");
-        fprintf(bat_script, "\n");
-        
-        fprintf(bat_script, ":compiler_setup\n");
-        fprintf(bat_script, "set COMPILERFLAGS=/diagnostics:column /EHa- /FC /fp:except- /fp:fast /Gm- /GR- /GS- /Gs9999999 /nologo /W4 /WX /Z7 /Zo\n");
-        fprintf(bat_script, "if %%RELEASEBUILD%% equ 0 (\n");
-        fprintf(bat_script, "    set COMPILERFLAGSEXE=%%COMPILERFLAGS%% /MTd /Od /DINTERNAL_BUILD\n");
-        fprintf(bat_script, "    set COMPILERFLAGSDLL=%%COMPILERFLAGS%% /LDd /Od /DINTERNAL_BUILD\n");
-        fprintf(bat_script, ")\n");
-        fprintf(bat_script, "if %%RELEASEBUILD%% equ 1 (\n");
-        fprintf(bat_script, "    set COMPILERFLAGSEXE=%%COMPILERFLAGS%% /MT /Oi /O2 /DRELEASE_BUILD\n");
-        fprintf(bat_script, "    set COMPILERFLAGSDLL=%%COMPILERFLAGS%% /LD /Oi /O2 /DRELEASE_BUILD\n");
-        fprintf(bat_script, ")\n");
-        fprintf(bat_script, "\n");
-        
-        fprintf(bat_script, ":linker_setup\n");
-        fprintf(bat_script, "set LINKERFLAGS=/INCREMENTAL:NO /MAP /NODEFAULTLIB /OPT:REF /STACK:0x100000,0x100000\n");
-        fprintf(bat_script, "set LINKERFLAGSEXE=%%LINKERFLAGS%% /ENTRY:Main /SUBSYSTEM:WINDOWS\n");
-        fprintf(bat_script, "set LINKERFLAGSDLL=%%LINKERFLAGS%% /NOENTRY /EXPORT:Update\n");
-        fprintf(bat_script, "\n");
-        
-        fprintf(bat_script, "if not exist \"..\\bin\\win32\" mkdir \"..\\bin\\win32\"\n");
-        fprintf(bat_script, "pushd \"..\\bin\\win32\"\n");
-        fprintf(bat_script, "\n");
-        
-        fprintf(bat_script, "del *.exp 2> NUL\n");
-        fprintf(bat_script, "del *.lib 2> NUL\n");
-        fprintf(bat_script, "del *.map 2> NUL\n");
-        fprintf(bat_script, "del *.o   2> NUL\n");
-        fprintf(bat_script, "del *.obj 2> NUL\n");
-        fprintf(bat_script, "\n");
-        
-        fprintf(bat_script, "echo.\n");
-        fprintf(bat_script, "echo building game dll...\n");
-        fprintf(bat_script, "cl %%COMPILERFLAGSDLL%% /EP /C \"..\\..\\src\\game.cpp\" > expanded_game.cpp\n");
-        fprintf(bat_script, "cl %%COMPILERFLAGSDLL%% \"..\\..\\src\\game.cpp\" /link /PDB:game.pdb %%LINKERFLAGSDLL%%\n");
-        fprintf(bat_script, "if %%ERRORLEVEL%% neq 0 goto error\n");
-        fprintf(bat_script, "\n");
-        
-        fprintf(bat_script, "tasklist /FI \"IMAGENAME eq platform_win32.exe\" 2>NUL | find /I /N \"platform_win32.exe\">NUL");
-        fprintf(bat_script, "if %%ERRORLEVEL%% equ 0 (");
-        fprintf(bat_script, "echo.");
-        fprintf(bat_script, "echo platform_win32.exe is running, skipping build...");
-        fprintf(bat_script, "goto cleanup");
-        fprintf(bat_script, ")");
-        fprintf(bat_script, "\n");
-        
-        fprintf(bat_script, "echo.\n");
-        fprintf(bat_script, "echo building game exe...\n");
-        fprintf(bat_script, "cl %%COMPILERFLAGSEXE%% /EP /C \"..\\..\\src\\platform_win32.cpp\" > expanded_platform_win32.cpp\n");
-        fprintf(bat_script, "cl %%COMPILERFLAGSEXE%% \"..\\..\\src\\platform_win32.cpp\" /link /PDB:platform_win32.pdb %%LINKERFLAGSEXE%% kernel32.lib\n");
-        fprintf(bat_script, "if %%ERRORLEVEL%% neq 0 goto error\n");
-        fprintf(bat_script, "\n");
-        
-        fprintf(bat_script, ":cleanup");
-        fprintf(bat_script, "del *.exp 2> NUL\n");
-        fprintf(bat_script, "del *.lib 2> NUL\n");
-        fprintf(bat_script, "del *.o   2> NUL\n");
-        fprintf(bat_script, "del *.obj 2> NUL\n");
-        fprintf(bat_script, "\n");
-        
-        fprintf(bat_script, ":end\n");
-        fprintf(bat_script, "echo.\n");
-        fprintf(bat_script, "echo build complete!\n");
-        fprintf(bat_script, "popd\n");
-        fprintf(bat_script, "exit /b 0\n");
-        fprintf(bat_script, "\n");
-        
-        fprintf(bat_script, ":error\n");
-        fprintf(bat_script, "echo.\n");
-        fprintf(bat_script, "echo build error, quitting...\n");
-        fprintf(bat_script, "popd\n");
-        fprintf(bat_script, "exit /b 1\n");
-        fprintf(bat_script, "\n");
-        
-        fclose(bat_script);
-    }
-}
-
-CUSTOM_COMMAND_SIG(ryanb_set_line_endings_crlf) {
+// commands
+CUSTOM_COMMAND_SIG(ryanb_command_set_line_endings_crlf) {
     View_ID view = get_active_view(app, Access_ReadVisible);
     Buffer_ID buffer = view_get_buffer(app, view, Access_ReadVisible);
     rewrite_lines_to_crlf(app, buffer);
     set_eol_mode_to_crlf(app);
 }
 
-CUSTOM_COMMAND_SIG(ryanb_set_line_endings_lf) {
+CUSTOM_COMMAND_SIG(ryanb_command_set_line_endings_lf) {
     View_ID view = get_active_view(app, Access_ReadVisible);
     Buffer_ID buffer = view_get_buffer(app, view, Access_ReadVisible);
     rewrite_lines_to_lf(app, buffer);
     set_eol_mode_to_lf(app);
+}
+
+CUSTOM_COMMAND_SIG(ryanb_command_lister) {
+    View_ID view = get_this_ctx_view(app, Access_Always);
+    if (view == 0) return;
+    Buffer_ID buffer = buffer = view_get_buffer(app, view, Access_ReadVisible);
+    
+    Scratch_Block scratch(app);
+    
+    Lister_Block lister(app, scratch);
+    lister_set_query(lister, string_u8_litexpr("Select a command..."));
+    lister_set_default_handlers(lister);
+    
+    // apply theme
+    {
+        String_Const_u8 fcoder_extension = string_u8_litexpr(".4coder");
+        String_Const_u8 file_name = push_buffer_unique_name(app, scratch, buffer);
+        if (string_match(string_postfix(file_name, fcoder_extension.size), fcoder_extension)) {
+            lister_add_item(lister, string_u8_litexpr("apply theme"), file_name, (void*)load_theme_current_buffer, 0);
+        }
+    }
+    
+    // change line endings
+    {
+        Managed_Scope scope = buffer_get_managed_scope(app, buffer);
+        Line_Ending_Kind* eol_setting = scope_attachment(app, scope, buffer_eol_setting, Line_Ending_Kind);
+        switch (*eol_setting) {
+            case LineEndingKind_Binary: {
+                lister_add_item(lister, string_u8_litexpr("change line endings to CRLF"), string_u8_litexpr(""), (void*)ryanb_command_set_line_endings_crlf, 0);
+                lister_add_item(lister, string_u8_litexpr("change line endings to LF"),   string_u8_litexpr(""), (void*)ryanb_command_set_line_endings_lf, 0);
+            }
+            break;
+            
+            case LineEndingKind_LF: {
+                lister_add_item(lister, string_u8_litexpr("change line endings to CRLF"), string_u8_litexpr(""), (void*)ryanb_command_set_line_endings_crlf, 0);
+            }
+            break;
+            
+            case LineEndingKind_CRLF: {
+                lister_add_item(lister, string_u8_litexpr("change line endings to LF"), string_u8_litexpr(""), (void*)ryanb_command_set_line_endings_lf, 0);
+            }
+            break;
+        }
+    }
+    
+    Lister_Result result = run_lister(app, lister);
+    
+    if (!result.canceled) {
+        Custom_Command_Function* command = (Custom_Command_Function*)(result.user_data);
+        if (command != 0) {
+            view_enqueue_command_function(app, view, command);
+        }
+    }
 }
 
 // hotkeys
@@ -663,65 +585,6 @@ CUSTOM_COMMAND_SIG(ryanb_click_set_cursor_and_mark) {
 CUSTOM_COMMAND_SIG(ryanb_close_extra_panels) {
     close_build_footer_panel(app);
     show_function_helper = false;
-}
-
-CUSTOM_COMMAND_SIG(ryanb_command_lister) {
-    View_ID view = get_this_ctx_view(app, Access_Always);
-    if (view == 0) return;
-    Buffer_ID buffer = buffer = view_get_buffer(app, view, Access_ReadVisible);
-    
-    Scratch_Block scratch(app);
-    
-    Lister_Block lister(app, scratch);
-    lister_set_query(lister, string_u8_litexpr("Select a command..."));
-    lister_set_default_handlers(lister);
-    
-    // apply theme
-    {
-        String_Const_u8 fcoder_extension = string_u8_litexpr(".4coder");
-        String_Const_u8 file_name = push_buffer_unique_name(app, scratch, buffer);
-        if (string_match(string_postfix(file_name, fcoder_extension.size), fcoder_extension)) {
-            lister_add_item(lister, string_u8_litexpr("apply theme"), file_name, (void*)load_theme_current_buffer, 0);
-        }
-    }
-    
-    // create build script
-    {
-        String_Const_u8 hot_directory = push_hot_directory(app, scratch);
-        lister_add_item(lister, string_u8_litexpr("create build script"), hot_directory, (void*)ryanb_create_build_script, 0);
-    }
-    
-    // change line endings
-    {
-        Managed_Scope scope = buffer_get_managed_scope(app, buffer);
-        Line_Ending_Kind* eol_setting = scope_attachment(app, scope, buffer_eol_setting, Line_Ending_Kind);
-        switch (*eol_setting) {
-            case LineEndingKind_Binary: {
-                lister_add_item(lister, string_u8_litexpr("change line endings to CRLF"), string_u8_litexpr(""), (void*)ryanb_set_line_endings_crlf, 0);
-                lister_add_item(lister, string_u8_litexpr("change line endings to LF"),   string_u8_litexpr(""), (void*)ryanb_set_line_endings_lf, 0);
-            }
-            break;
-            
-            case LineEndingKind_LF: {
-                lister_add_item(lister, string_u8_litexpr("change line endings to CRLF"), string_u8_litexpr(""), (void*)ryanb_set_line_endings_crlf, 0);
-            }
-            break;
-            
-            case LineEndingKind_CRLF: {
-                lister_add_item(lister, string_u8_litexpr("change line endings to LF"), string_u8_litexpr(""), (void*)ryanb_set_line_endings_lf, 0);
-            }
-            break;
-        }
-    }
-    
-    Lister_Result result = run_lister(app, lister);
-    
-    if (!result.canceled) {
-        Custom_Command_Function* command = (Custom_Command_Function*)(result.user_data);
-        if (command != 0) {
-            view_enqueue_command_function(app, view, command);
-        }
-    }
 }
 
 CUSTOM_COMMAND_SIG(ryanb_set_bookmark) {
@@ -820,12 +683,6 @@ CUSTOM_COMMAND_SIG(ryanb_goto_definition) {
 CUSTOM_COMMAND_SIG(ryanb_click_goto_definition) {
     click_set_cursor_and_mark(app);
     ryanb_goto_definition(app);
-}
-
-CUSTOM_COMMAND_SIG(ryanb_goto_line) {
-    goto_line(app);
-    center_view(app);
-    set_mark_to_cursor(app);
 }
 
 CUSTOM_COMMAND_SIG(ryanb_interactive_open_all_code) {
@@ -947,18 +804,6 @@ CUSTOM_COMMAND_SIG(ryanb_open_panel_vsplit) {
         view_set_active(app, next_view);
         view_set_buffer(app, next_view, buffer, 0);
     }
-}
-
-CUSTOM_COMMAND_SIG(ryanb_page_down) {
-    page_down(app);
-    center_view(app);
-    set_mark_to_cursor(app);
-}
-
-CUSTOM_COMMAND_SIG(ryanb_page_up) {
-    page_up(app);
-    center_view(app);
-    set_mark_to_cursor(app);
 }
 
 CUSTOM_COMMAND_SIG(ryanb_rename_identifier) {
@@ -1603,6 +1448,10 @@ ryanb_draw_scope_annotations(Application_Links *app, Buffer_ID buffer, Text_Layo
         
         if (start_token) {
             ARGB_Color color = finalize_color(defcolor_comment, 1);
+            if (i != 0) {
+                color &= 0x00FFFFFF;
+                color |= 0x60000000;
+            }
             
             Rect_f32 rect_start = text_layout_character_on_screen(app, text_layout_id, range.start);
             Rect_f32 rect_end   = text_layout_character_on_screen(app, text_layout_id, range.end);
@@ -1889,8 +1738,8 @@ void setup_ryanb_mapping(Mapping* mapping, i64 global_id, i64 file_id, i64 code_
     Bind(goto_end_of_file,                KeyCode_End,    KeyCode_Control);                // ctrl + end       : seek bottom of file
     Bind(seek_beginning_of_line,          KeyCode_Home);                                   // home             : seek line start
     Bind(goto_beginning_of_file,          KeyCode_Home,   KeyCode_Control);                // ctrl + home      : seek top of file and
-    Bind(ryanb_page_down,                 KeyCode_PageDown);                               // page down        : page down and center view
-    Bind(ryanb_page_up,                   KeyCode_PageUp);                                 // page up          : page up and center view
+    Bind(page_down,                       KeyCode_PageDown);                               // page down        : page down
+    Bind(page_up,                         KeyCode_PageUp);                                 // page up          : page up
     Bind(move_up,                         KeyCode_Up);                                     // up               : seek line up
     Bind(move_line_up,                    KeyCode_Up,     KeyCode_Alt);                    // alt  + up        : move line up
     Bind(move_up_to_blank_line,           KeyCode_Up,     KeyCode_Control);                // ctrl + up        : seek whitespace up and center view
@@ -1907,7 +1756,7 @@ void setup_ryanb_mapping(Mapping* mapping, i64 global_id, i64 file_id, i64 code_
     Bind(duplicate_line,                  KeyCode_D,      KeyCode_Control);                // ctrl + d         : duplicate line
     Bind(ryanb_search,                    KeyCode_F,      KeyCode_Control);                // ctrl + f         : find in current buffer
     Bind(ryanb_list_all_locations,        KeyCode_F,      KeyCode_Control, KeyCode_Shift); // ctrl + shift + f : find in every buffer
-    Bind(ryanb_goto_line,                 KeyCode_G,      KeyCode_Control);                // ctrl + g         : go to line dialog and center view
+    Bind(goto_line,                       KeyCode_G,      KeyCode_Control);                // ctrl + g         : go to line dialog
     Bind(query_replace,                   KeyCode_H,      KeyCode_Control);                // ctrl + h         : find and replace prompt
     Bind(query_replace_identifier,        KeyCode_H,      KeyCode_Control, KeyCode_Shift); // ctrl + shift + h : find and replace prompt, with current identifier autopopulated as find
     Bind(ryanb_kill_to_end_of_line,       KeyCode_K,      KeyCode_Control);                // ctrl + k         : delete characters from cursor to end of line
