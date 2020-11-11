@@ -1,0 +1,50 @@
+defcolor_back = 0xFF101010;
+defcolor_bar = 0xFFB1B1B0;
+defcolor_base = defcolor_back;
+
+defcolor_pop1 = 0xFF51A4DC;
+defcolor_pop2 = 0xFFFFBD5C;
+
+defcolor_text_default = defcolor_bar;
+defcolor_at_highlight = defcolor_back;
+
+defcolor_margin = defcolor_back;
+defcolor_margin_hover = 0xFFFF0000;
+defcolor_margin_active = defcolor_bar;
+
+defcolor_list_item = defcolor_back;
+defcolor_list_item_hover = 0xFF77777A;
+defcolor_list_item_active = 0xFF555559;
+
+defcolor_cursor = defcolor_text_default;
+defcolor_at_cursor = defcolor_back;
+defcolor_mark = defcolor_cursor;
+
+defcolor_highlight = defcolor_cursor;
+defcolor_highlight_cursor_line = 0xFF000000;
+defcolor_highlight_junk = 0xFFFF0000;
+defcolor_highlight_white = 0xFFFF0000;
+
+defcolor_comment = {0xFFC51A4A, defcolor_pop1};     // comments, annotations
+defcolor_comment_pop = {0xFF9A6FAA, 0xFF6CC04A}; // note, todo
+
+defcolor_keyword = {0xFF999798, 0xFF77777A, 0xFFFFFFFF}; // keywords, structs/funcs, operators
+defcolor_preproc = defcolor_text_default;
+defcolor_include = defcolor_preproc;
+defcolor_str_constant = 0xFF6CC04A;
+defcolor_char_constant = defcolor_str_constant;
+defcolor_int_constant = 0xFF6CC04A;
+defcolor_float_constant = defcolor_int_constant;
+defcolor_bool_constant = defcolor_int_constant;
+
+defcolor_special_character = 0xFFF27B5C;
+defcolor_ghost_character = 0xFFF27B5C;
+
+defcolor_paste = 0xFFFDDD42;
+defcolor_undo = 0xFFFDDD42;
+
+defcolor_back_cycle = {0xFF161616, 0xFF202020};
+defcolor_text_cycle = {defcolor_pop1, defcolor_pop2};
+
+defcolor_line_numbers_back = defcolor_back;
+defcolor_line_numbers_text = defcolor_comment;
